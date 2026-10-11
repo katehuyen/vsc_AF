@@ -1,0 +1,2968 @@
+{
+  "about": "Curated metadata for every bridge op: the area guide it belongs to, its effect (read | write | run | destructive | ui), a one-line plain-English summary, and the two cues an agent must not miss (asks = the user gets a confirmation dialog; plan = it only previews unless that flag is passed). test/test_manual_content.js fails when a registered op has no entry or an entry names an op that does not exist; node tools/manual_meta.js prints a starter entry for each missing op.",
+  "ops": {
+    "a2a.directive.remove": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Remove the user's directive from an A2A note or task (user-only op)."
+    },
+    "a2a.directive.set": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Set the user's directive (steer, veto or constraint) on an A2A note or task; it outranks every other rule. User-only op."
+    },
+    "a2a.notes.clear": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Clear the A2A notes board, or the part a filter names; pinned notes are kept unless asked."
+    },
+    "a2a.notes.delete": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Delete one A2A note for good (the only way a pinned note goes)."
+    },
+    "a2a.notes.deleteMany": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Delete several A2A notes by id in one write."
+    },
+    "a2a.notes.get": {
+      "area": "a2a",
+      "effect": "read",
+      "summary": "Read one A2A note in full; marks it read for you and puts any user directive first."
+    },
+    "a2a.notes.list": {
+      "area": "a2a",
+      "effect": "read",
+      "summary": "List A2A notes that fit your coordinates (project, role, topic, unread), best fit first."
+    },
+    "a2a.notes.pin": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Pin or unpin an A2A note so automatic sweeps never remove it."
+    },
+    "a2a.notes.post": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Leave a passive note for other agents (a fact, warning, convention, discovery or result)."
+    },
+    "a2a.notes.resolve": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Close (or reopen) an A2A note; resolved notes leave the lists."
+    },
+    "a2a.notes.sweep": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Drop A2A notes that are resolved and expired; pinned notes are never swept."
+    },
+    "a2a.status": {
+      "area": "a2a",
+      "effect": "read",
+      "summary": "Your A2A dashboard in one call: unread notes, tasks you could take, tasks you hold, your handoffs, and blocked items."
+    },
+    "a2a.tasks.add": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Hand a piece of work to another agent or role as a claimable A2A task."
+    },
+    "a2a.tasks.cancel": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Cancel an A2A task (the poster's or the user's call); kept as history."
+    },
+    "a2a.tasks.claim": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Claim an A2A task under a 30-minute lease; refused with the reason if another agent won or it is reserved."
+    },
+    "a2a.tasks.clear": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Clear the A2A task board (closed tasks by default)."
+    },
+    "a2a.tasks.delete": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Delete one A2A task for good; a task held under a live lease is refused."
+    },
+    "a2a.tasks.deleteMany": {
+      "area": "a2a",
+      "effect": "destructive",
+      "summary": "Delete several A2A tasks by id; tasks under a live lease are spared."
+    },
+    "a2a.tasks.finish": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Finish an A2A task you hold (done, failed or blocked); leaves a result note for whoever handed it over."
+    },
+    "a2a.tasks.fromNote": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Promote an A2A note to a task, keeping the trail."
+    },
+    "a2a.tasks.handoff": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Pass an A2A task you hold to another role; the third handoff is refused and the task goes blocked."
+    },
+    "a2a.tasks.heartbeat": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Renew your lease on an A2A task and record progress; returns any new user directive first."
+    },
+    "a2a.tasks.list": {
+      "area": "a2a",
+      "effect": "read",
+      "summary": "List the A2A task board (newest first) with filters; expired leases return to queued."
+    },
+    "a2a.tasks.next": {
+      "area": "a2a",
+      "effect": "read",
+      "summary": "The one A2A task you should take next (or null); pass claim=true to claim it in the same call."
+    },
+    "a2a.tasks.reroute": {
+      "area": "a2a",
+      "effect": "write",
+      "summary": "Reassign an A2A task under the user's authority (user-only op; no loop guard)."
+    },
+    "a2a.tasks.runNow": {
+      "area": "a2a",
+      "effect": "run",
+      "summary": "Start a Console session now that claims and works an A2A task (user-only op)."
+    },
+    "accounts.activate": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Choose which captured sign-in the next session on an engine starts with; running sessions are not changed."
+    },
+    "accounts.attribution": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Explain a sign-in card: which record placed which run on which account, with the evidence."
+    },
+    "accounts.autoRefresh": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Read or switch the background quota refresh for captured sign-ins."
+    },
+    "accounts.capture": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Save the sign-in currently on disk as a reusable account slot (the user signs in first)."
+    },
+    "accounts.complete": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Check whether account slots are complete and what is missing; dryRun=false repairs what can be repaired.",
+      "plan": "dryRun=false"
+    },
+    "accounts.delete": {
+      "area": "accounts",
+      "effect": "destructive",
+      "summary": "Delete an account slot for good (records are moved to the pool first); refused while it is in use."
+    },
+    "accounts.disable": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Put an account to sleep without deleting it; nothing will be placed on it until enabled."
+    },
+    "accounts.enable": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Wake a sleeping account and re-read its sign-in."
+    },
+    "accounts.forget": {
+      "area": "accounts",
+      "effect": "destructive",
+      "summary": "Forget an account and delete its folder (drained first); refused while in use."
+    },
+    "accounts.list": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "List captured sign-ins per engine: who they are, plan usage left, and which one the next session uses."
+    },
+    "accounts.portable": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Check whether account directories are stored portably; dryRun=false rewrites them as tokens.",
+      "plan": "dryRun=false"
+    },
+    "accounts.promotions": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Show permissions approved inside account sessions that were promoted to the fleet settings."
+    },
+    "accounts.reauth": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Get the exact command a person runs to sign an account in again (it opens no browser itself)."
+    },
+    "accounts.refresh": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Queue fresh quota reads for named accounts, one every few seconds."
+    },
+    "accounts.repairLinks": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Recreate the shared directory links of every captured account (dryRun=true to preview).",
+      "plan": "dryRun=true"
+    },
+    "accounts.repairSettings": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Re-copy the fleet's engine settings into every account slot and report what was missing (dryRun=true to preview).",
+      "plan": "dryRun=true"
+    },
+    "accounts.repairs": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "History of repairs the account contract had to make, with the evidence."
+    },
+    "accounts.signout": {
+      "area": "accounts",
+      "effect": "destructive",
+      "summary": "Sign an account out (remove its grant files) but keep the slot; refused while in use."
+    },
+    "accounts.status": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Can a session start right now, and on which account: per engine, the account with the most room and the next reset."
+    },
+    "agents.create": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Create a new agent folder (CLAUDE.md, memory index, settings) under an agent root."
+    },
+    "agents.defaults": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "Resolve what \"Default\" model, effort and sign-in mean for an agent on each engine, and where each value comes from."
+    },
+    "agents.defaults.set": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Set an agent's default model, effort or sign-in for one engine."
+    },
+    "agents.exclude": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Hide a discovered folder that is not really an agent (the folder is untouched)."
+    },
+    "agents.include": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Bring an excluded agent folder back into the fleet."
+    },
+    "agents.list": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "The fleet roster: every agent with id, name, folder, activity and session count."
+    },
+    "agents.pack.export": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Export an agent (instructions, duties, memory index, skills, workflows) to a portable pack file."
+    },
+    "agents.pack.import": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Create a new agent from a pack file."
+    },
+    "agents.roots": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "Where new agents may be created and which model names are accepted there."
+    },
+    "agents.roots.add": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Add a folder the fleet scans for agents."
+    },
+    "agents.roots.clean": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Remove duplicate agent-root entries (dryRun=true to preview).",
+      "plan": "dryRun=true"
+    },
+    "agents.roots.remove": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Stop scanning a folder for agents (the folder is untouched)."
+    },
+    "agents.sync": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Sync one agent's instructions to the other engines (AGENTS.md copies, duty workflows, MCP snippets)."
+    },
+    "airtable.config.get": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "The local Airtable Engine module settings (database and media folders, defaults)."
+    },
+    "airtable.config.set": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Patch the local Airtable Engine module settings."
+    },
+    "airtable.folders.add": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Add one database or media folder to the Airtable Engine module."
+    },
+    "airtable.folders.remove": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Remove one folder from the Airtable Engine module listing (data untouched)."
+    },
+    "airtable.instances": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Discover local Airtable Engine instances and health-check each."
+    },
+    "airtable.register": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Register the airtable MCP server user-wide for Claude Code."
+    },
+    "airtable.start": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Start a local Airtable Engine instance in the background."
+    },
+    "airtable.status": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Airtable Engine module state: folders, MCP registration, staged server version."
+    },
+    "airtable.unregister": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Remove the airtable MCP server registration."
+    },
+    "alerts.gate": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "Why no sound was heard: every mute and quiet-hours authority holding the sound gate shut right now."
+    },
+    "alerts.mute": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Toggle or set the fleet-wide sound mute, or mute one session."
+    },
+    "alerts.nudge": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or set the reminder tone that repeats while an agent's question is unanswered."
+    },
+    "alerts.on": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or set which events play a sound for every session."
+    },
+    "alerts.play": {
+      "area": "alerts",
+      "effect": "ui",
+      "summary": "Play one sound by id now (preview a tone)."
+    },
+    "alerts.quiet": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or set the quiet-hours window in which the farm makes no sound."
+    },
+    "alerts.read": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Switch read-aloud on or off for one session: its answers are spoken as each turn ends."
+    },
+    "alerts.readNow": {
+      "area": "alerts",
+      "effect": "ui",
+      "summary": "Read one answer, turn, step or a text of your own out loud on this machine, once."
+    },
+    "alerts.readText": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "The text a reading would speak, prepared for speech, without speaking it."
+    },
+    "alerts.reading": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "What is being read aloud right now, with its controls."
+    },
+    "alerts.readingSettings": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or set how readings sound (voice, speed, how code is spoken, length)."
+    },
+    "alerts.resolve": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "Which sound an event would play for a session, and which settings step chose it."
+    },
+    "alerts.session": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or write one session's sound settings in one call."
+    },
+    "alerts.speak": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or set the spoken announcement that names which agent an alert is about."
+    },
+    "alerts.status": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "The whole sound model in one call: gate, events, announcement and sound library."
+    },
+    "alerts.voice.add": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Add one of the user's own sound files to the library (up to 10)."
+    },
+    "alerts.voice.remove": {
+      "area": "alerts",
+      "effect": "destructive",
+      "summary": "Remove one of the user's own sounds; events using it fall back to their default."
+    },
+    "alerts.voice.rename": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Rename one of the user's own sounds (the id stays)."
+    },
+    "alerts.voice.set": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Choose which sound an event plays, at settings, agent or session level."
+    },
+    "alerts.voices": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "The sounds this install can make and which ones this machine can play."
+    },
+    "alerts.volume": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Read or set the volume of alert tones (0-100)."
+    },
+    "automations.bulk": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Enable or disable many schedules and triggers at once."
+    },
+    "automations.pause": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Pause all automations (optionally for some minutes, with a reason)."
+    },
+    "automations.quietHours": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Set or clear the nightly quiet window (due schedules are deferred, not dropped)."
+    },
+    "automations.resume": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Resume all automations."
+    },
+    "automations.status": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "The automation gate (master switch, pause, quiet hours) and each automation's fired/skipped counts."
+    },
+    "baton.attach": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Make a running session leg 1 of a new baton relay without restarting it."
+    },
+    "baton.faults": {
+      "area": "relay",
+      "effect": "read",
+      "summary": "Relay legs whose engine failed a turn and what Agent Farm is doing about each."
+    },
+    "baton.lastLeg": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Make the running leg the chain's last (the user's soft brake), or undo that."
+    },
+    "baton.legs": {
+      "area": "relay",
+      "effect": "read",
+      "summary": "A relay chain's legs in order, or one session's place in its chain."
+    },
+    "baton.now": {
+      "area": "relay",
+      "effect": "run",
+      "summary": "Start a waiting successor leg now (the user's go)."
+    },
+    "baton.pass": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Leave the baton at the quota or context wall: your successor's first message; starts nothing until your session ends."
+    },
+    "baton.setLegs": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Read or change a running chain's leg ceiling."
+    },
+    "baton.status": {
+      "area": "relay",
+      "effect": "read",
+      "summary": "Live batons and their chains, hop by hop, with what each waits for."
+    },
+    "baton.stop": {
+      "area": "relay",
+      "effect": "destructive",
+      "summary": "Stop a waiting baton or a whole chain (the user's brake); nothing is deleted."
+    },
+    "browser.login": {
+      "area": "studio",
+      "effect": "ui",
+      "summary": "Open a Chrome window on a browser recipe's profile so the user signs in once."
+    },
+    "browser.recipes": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Browser recipes a workflow browser step can use, and whether each profile is signed in."
+    },
+    "calendar.add": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Plan a publish: add a note to the content calendar."
+    },
+    "calendar.list": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "The content calendar entries (one note per publish)."
+    },
+    "calendar.set": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Change one content-calendar entry (status, url, date...)."
+    },
+    "chains.continue": {
+      "area": "relay",
+      "effect": "run",
+      "summary": "Reopen a stopped, ended or hanging relay chain from its last handover words."
+    },
+    "chains.end": {
+      "area": "relay",
+      "effect": "destructive",
+      "summary": "End a relay chain on purpose; the running leg is told to write its note instead of passing."
+    },
+    "chains.endHanging": {
+      "area": "relay",
+      "effect": "destructive",
+      "summary": "End every hanging relay chain at once.",
+      "plan": "dryRun=true"
+    },
+    "chains.list": {
+      "area": "relay",
+      "effect": "read",
+      "summary": "Every relay chain in one row with state, leg count, totals and problem signals."
+    },
+    "chains.pause": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Pause a relay chain: here (short break in the same session) or pass (successor waits at the door)."
+    },
+    "chains.resume": {
+      "area": "relay",
+      "effect": "run",
+      "summary": "Continue a paused relay chain."
+    },
+    "chains.setAccount": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Set which account a running chain's next legs open on."
+    },
+    "claude.settings": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Claude Code's own settings.json (catalogued lines only) with current values and meanings."
+    },
+    "claude.settings.clear": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Remove one catalogued line from Claude Code's settings.json so the CLI default applies."
+    },
+    "claude.settings.set": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Write one catalogued line of Claude Code's settings.json (validated; no raw overwrite).",
+      "plan": "dryRun=true"
+    },
+    "console.answer": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Answer the question a hosted Console session is waiting on (not permission prompts; those are the user's)."
+    },
+    "console.changes": {
+      "area": "console",
+      "effect": "read",
+      "summary": "What a Console conversation changed on disk (git status and diff stat of its folder)."
+    },
+    "console.close": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Close a hosted Console card; the conversation stays resumable."
+    },
+    "console.continueFromHandover": {
+      "area": "console",
+      "effect": "run",
+      "summary": "Start the fresh follow-up session for a Console card that handed over, from its handover note."
+    },
+    "console.file.read": {
+      "area": "console",
+      "effect": "read",
+      "summary": "Read a file a Console conversation wrote, as it is now (optionally with its diff against HEAD)."
+    },
+    "console.forgetWindow": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Forget which terminal window a session was last opened in."
+    },
+    "console.interrupt": {
+      "area": "console",
+      "effect": "destructive",
+      "summary": "Stop the turn a hosted session is running; the conversation survives."
+    },
+    "console.older": {
+      "area": "console",
+      "effect": "read",
+      "summary": "Load older scrollback into a Console card (display only)."
+    },
+    "console.permissionMode": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Change a hosted session's standing permission mode from the next turn."
+    },
+    "console.queue": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Read or act on messages held for a Console session (list, edit, drop, send, clear)."
+    },
+    "console.runtime": {
+      "area": "console",
+      "effect": "read",
+      "summary": "State of the shared OpenCode process that OpenCode Console cards run in."
+    },
+    "console.send": {
+      "area": "console",
+      "effect": "run",
+      "summary": "Send a message into a hosted Console session (steers the running turn on Claude; held until the turn ends elsewhere)."
+    },
+    "console.sessions": {
+      "area": "console",
+      "effect": "read",
+      "summary": "The Console sessions this window hosts: engine, capabilities, status, cost, questions waiting."
+    },
+    "console.setAccount": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Move a live Console conversation onto another sign-in (from the next message)."
+    },
+    "console.setEffort": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Change a hosted session's reasoning effort from the next turn."
+    },
+    "console.setModel": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Change a hosted session's model from the next turn."
+    },
+    "console.start": {
+      "area": "console",
+      "effect": "run",
+      "summary": "Open a hosted Console session for an agent (any engine), optionally with a first message."
+    },
+    "console.stopTask": {
+      "area": "console",
+      "effect": "destructive",
+      "summary": "Stop one background command a hosted Claude session is running."
+    },
+    "console.switch": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Change which provider route serves a hosted session, where the engine allows it."
+    },
+    "constitution.sync": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Mirror a shared root CLAUDE.md to AGENTS.md so the other engines read the same shared rules."
+    },
+    "digest.daily": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "Today's digest; shown by default, send=true sends it through the configured channel, speak=true reads it aloud."
+    },
+    "dispatch.test": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Ask the dispatcher which agent a piece of work would go to (rules first, then a cheap judge model)."
+    },
+    "docopen.get": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "How report and answer Markdown links open (VS Code, preview, Obsidian, custom)."
+    },
+    "docopen.set": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Set how report and answer Markdown links open."
+    },
+    "duties.add": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Add a standing duty to an agent's DUTIES.md (title, cadence, what to watch, what to do)."
+    },
+    "duties.automate": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Create a watch trigger from a duty so it fires even while the agent is idle."
+    },
+    "duties.delete": {
+      "area": "agents",
+      "effect": "destructive",
+      "summary": "Remove a duty from an agent's DUTIES.md."
+    },
+    "duties.list": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "List standing duties with live watch status (is work waiting?)."
+    },
+    "duties.move": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Move a duty up or down in DUTIES.md."
+    },
+    "duties.togglePause": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Pause or resume a duty."
+    },
+    "duties.update": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Edit a duty in place (title, cadence, watch, do, note, paused)."
+    },
+    "engines.models": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Models an engine offers right now and the reasoning efforts each supports; check before passing model=."
+    },
+    "engines.status": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Which engine CLIs are installed and ready on this machine, how each is signed in or paid for, and what is missing."
+    },
+    "engines.test": {
+      "area": "engines",
+      "effect": "run",
+      "summary": "Run one real turn against an engine to prove it answers (costs a small call)."
+    },
+    "evals.add": {
+      "area": "insights",
+      "effect": "write",
+      "summary": "Add a regression case for an agent (an input plus what a good answer must satisfy)."
+    },
+    "evals.delete": {
+      "area": "insights",
+      "effect": "destructive",
+      "summary": "Delete a regression case (past verdicts stay)."
+    },
+    "evals.list": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "List an agent's regression cases."
+    },
+    "evals.runs": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "An agent's eval runs with per-case verdicts against the previous run."
+    },
+    "examples.setup": {
+      "area": "basics",
+      "effect": "write",
+      "summary": "Create one of three working examples (inbox watch trigger, morning schedule, two-step workflow); the first two start enabled."
+    },
+    "export.otlp": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Export recent sessions as OpenTelemetry (OTLP/JSON) traces."
+    },
+    "export.relayScript": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Write out the relay script that streams another machine's sessions into this farm."
+    },
+    "export.schedule": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Write a Windows script for a schedule plus the schtasks line the user can register."
+    },
+    "farm.away": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "Whether Agent Farm is running here or the headless service is answering instead."
+    },
+    "farm.brief": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Your situation in one call: session, agent, project, account, what waits for you, fleet state, the user's language."
+    },
+    "farm.cleanup": {
+      "area": "basics",
+      "effect": "destructive",
+      "summary": "List what has been stuck 24h+ (queued rows, idle cards, waiting batons, hanging chains); apply=true cancels or closes them (nothing is deleted).",
+      "plan": "apply=true"
+    },
+    "farm.cpuProfile": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Diagnostics: a CPU profile of the extension host."
+    },
+    "farm.find": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Rank playbooks, area guides and ops for a request in plain English (q=); start here when unsure."
+    },
+    "farm.guide": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "The Agent Manual: the map, or one area guide, playbook or op contract (id=); works while VS Code is closed."
+    },
+    "farm.health": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "What is running: version, uptime, live sessions, leftovers, pending build, restart plan, vault resolution."
+    },
+    "farm.open": {
+      "area": "remote",
+      "effect": "run",
+      "summary": "Start Agent Farm from a phone (the headless service opens it when VS Code is closed)."
+    },
+    "farm.ops": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "The bridge operation catalog: compact index by area, one op's full contract (op=), an area (area=), a search (q=), or the full dump (full=true)."
+    },
+    "farm.reloadWindow": {
+      "area": "basics",
+      "effect": "destructive",
+      "summary": "Reload the whole VS Code window (the only way to load a newly installed build); open terminals block it."
+    },
+    "farm.restartExtensionHost": {
+      "area": "basics",
+      "effect": "destructive",
+      "summary": "Restart the extension host (window and terminals survive; Console sessions can be resumed with resume=true)."
+    },
+    "farm.waits": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Everything the fleet is waiting for, in one shape, each with what ends the wait."
+    },
+    "farm.workArea": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "The agents' scratch folder in force and the retired folders writes are refused in."
+    },
+    "files.read": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Read a file a page shows (for devices without an editor); paths no page shows are refused."
+    },
+    "flex.get": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "One preference (flex point) resolved across its levels, with which level won."
+    },
+    "flex.list": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "Every user preference (flex point) and the levels it can be set at."
+    },
+    "flex.set": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Set one preference (flex point) at a level, or live on a running workflow."
+    },
+    "hooks.install": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Install Agent Farm's live hooks into Claude settings files (user scope by default) with a backup.",
+      "plan": "dryRun=true"
+    },
+    "hooks.listener.restart": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Restart the local live-event listener (first fix to try after a port change)."
+    },
+    "hooks.port": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Who holds the live-event port, classified (this window, another window, or a stranger)."
+    },
+    "hooks.port.clear": {
+      "area": "engines",
+      "effect": "destructive",
+      "summary": "Stop a stranger process holding the live-event port and bind again.",
+      "plan": "dryRun=true"
+    },
+    "hooks.remove": {
+      "area": "engines",
+      "effect": "destructive",
+      "summary": "Remove Agent Farm's own hook entries from settings files; foreign hooks are kept.",
+      "plan": "dryRun=true"
+    },
+    "hooks.status": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Live hook installation status per settings file, with the exact hook commands per shell."
+    },
+    "insights.delegate": {
+      "area": "insights",
+      "effect": "run",
+      "summary": "Hand health findings to an agent as one headless run (cost-bearing).",
+      "plan": "confirm=true"
+    },
+    "insights.dismiss": {
+      "area": "insights",
+      "effect": "write",
+      "summary": "Hide a health finding for some days or for good."
+    },
+    "insights.dismissed": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "What is currently hidden from the insights list, and until when."
+    },
+    "insights.history": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "How each finding behaved over time, including whether it came back after a fix."
+    },
+    "insights.list": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Current health and optimization findings, each with a stable key."
+    },
+    "insights.restore": {
+      "area": "insights",
+      "effect": "write",
+      "summary": "Un-hide dismissed findings."
+    },
+    "kapici.ask": {
+      "area": "kapici",
+      "effect": "run",
+      "summary": "Ask Gatekeeper one-off typed questions (yes/no, choice, score) without writing a rule; may call a model."
+    },
+    "kapici.audit": {
+      "area": "kapici",
+      "effect": "read",
+      "summary": "Gatekeeper's recent decisions and how often it agreed with the current mechanism (shadow mode)."
+    },
+    "kapici.bindSecret": {
+      "area": "kapici",
+      "effect": "write",
+      "summary": "Make a Farm Secret the Gatekeeper's key, by name."
+    },
+    "kapici.eval": {
+      "area": "kapici",
+      "effect": "run",
+      "summary": "Put a state to a Gatekeeper rule and get its verdict with confidence; may call a model."
+    },
+    "kapici.mcp": {
+      "area": "kapici",
+      "effect": "read",
+      "summary": "Whether the Gatekeeper MCP server is staged and registered for Claude Code."
+    },
+    "kapici.mcp.register": {
+      "area": "kapici",
+      "effect": "write",
+      "summary": "Register the Gatekeeper MCP server user-wide so new Claude Code sessions get the kapici_* tools."
+    },
+    "kapici.mcp.unregister": {
+      "area": "kapici",
+      "effect": "write",
+      "summary": "Remove the Gatekeeper MCP server registration."
+    },
+    "kapici.rule.check": {
+      "area": "kapici",
+      "effect": "run",
+      "summary": "Run a Gatekeeper rule's golden examples through the real providers (each is a real call)."
+    },
+    "kapici.rules": {
+      "area": "kapici",
+      "effect": "read",
+      "summary": "Every Gatekeeper rule visible, which layer won, and every rule file that failed to load."
+    },
+    "kapici.status": {
+      "area": "kapici",
+      "effect": "read",
+      "summary": "Gatekeeper state: key present or missing, provider order, judge, rules loaded."
+    },
+    "launch.form": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "The route choices a start-session form offers for an engine."
+    },
+    "launch.manifests": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "What each spawn was set up to be (route, profile, requested model and settings)."
+    },
+    "launch.permission": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "What permission mode a launch in a folder would really run in, and the exact command line."
+    },
+    "launch.profile.delete": {
+      "area": "sessions",
+      "effect": "destructive",
+      "summary": "Delete a saved launch profile."
+    },
+    "launch.profile.rename": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Rename a saved launch profile."
+    },
+    "launch.profile.set": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Create or replace a saved launch profile (engine, route, model, effort, permissions, surface)."
+    },
+    "launch.profiles": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Saved launch profiles (the user's usual setups)."
+    },
+    "launch.runtime": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "What a session asked to run on beside what actually served it, turn by turn."
+    },
+    "live.alerts.get": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "Which sessions alert the user when it is their turn, and how (sound, focus, modal, toast)."
+    },
+    "live.alerts.set": {
+      "area": "alerts",
+      "effect": "write",
+      "summary": "Arm or disarm one session's \"your turn\" alerts."
+    },
+    "live.alerts.test": {
+      "area": "alerts",
+      "effect": "ui",
+      "summary": "Fire a session's selected alerts now and report what each one did."
+    },
+    "live.profile": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "Diagnostics: where live-event handling time goes on the extension host."
+    },
+    "live.versions": {
+      "area": "alerts",
+      "effect": "read",
+      "summary": "Diagnostics: what each Agent Farm build observed in the live event log."
+    },
+    "living.check.add": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Add or replace one Living check (a condition that means \"needs attention\")."
+    },
+    "living.check.remove": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Remove one Living check."
+    },
+    "living.checks": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "The user's Living checks."
+    },
+    "living.pulse": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "Run the Living checks now."
+    },
+    "manual.gaps": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Where the manual failed agents: unknown ops called, weak searches, missing guides, counted."
+    },
+    "manual.install": {
+      "area": "basics",
+      "effect": "write",
+      "summary": "Install the agent-farm skill for engines so sessions Agent Farm does not start also learn to use it.",
+      "plan": "confirm=true"
+    },
+    "manual.remove": {
+      "area": "basics",
+      "effect": "destructive",
+      "summary": "Remove the agent-farm skill files Agent Farm installed."
+    },
+    "manual.status": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "Where the Agent Manual is staged, the command to type, its coverage and problems, start-card mode, installed skills."
+    },
+    "mcp.servers.bindSecret": {
+      "area": "toolbox",
+      "effect": "write",
+      "summary": "Give an agent's MCP server a Farm Secret as an environment variable, by name."
+    },
+    "media.allin": {
+      "area": "studio",
+      "effect": "run",
+      "summary": "Process the media drop folder: look at each file with a model, stage and record it (apply=true acts).",
+      "plan": "apply=true"
+    },
+    "media.enrich": {
+      "area": "studio",
+      "effect": "run",
+      "summary": "Fill one media record's description by having a model look at its file."
+    },
+    "media.find": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Search local media records by words."
+    },
+    "media.library": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "The media library layout and contents per base and stage."
+    },
+    "media.library.file": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Move one file into the media library (never overwrites)."
+    },
+    "media.library.plan": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Where one file would go in the media library, without moving it."
+    },
+    "media.pending": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Media records waiting for a closed engine to be written."
+    },
+    "media.pending.flush": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Write waiting media records now."
+    },
+    "media.record": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "File one file into the media library and create its record."
+    },
+    "media.restage": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Move a library file to another stage together with its record."
+    },
+    "media.upload": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Upload a local file to a media provider and get a URL a model can read."
+    },
+    "memory.add": {
+      "area": "memory",
+      "effect": "write",
+      "summary": "Create one memory file for an agent and register it in MEMORY.md in the same write."
+    },
+    "memory.archive": {
+      "area": "memory",
+      "effect": "write",
+      "summary": "Move a memory file to memory/archive and drop its index line (plans first; confirm=true acts).",
+      "plan": "confirm=true"
+    },
+    "memory.ask": {
+      "area": "memory",
+      "effect": "read",
+      "summary": "What does the fleet remember about a topic: meaning-based search across every agent's memory files."
+    },
+    "memory.contradictions": {
+      "area": "memory",
+      "effect": "run",
+      "summary": "Find claims in an agent's memory that contradict each other (one cheap-model call)."
+    },
+    "memory.copy": {
+      "area": "memory",
+      "effect": "write",
+      "summary": "Copy one memory file to another agent and register it there."
+    },
+    "memory.distill": {
+      "area": "memory",
+      "effect": "run",
+      "summary": "Condense a bloated memory file with a cheap model without losing facts (apply=true overwrites).",
+      "plan": "apply=true"
+    },
+    "memory.duplicates": {
+      "area": "memory",
+      "effect": "read",
+      "summary": "Memory files several agents hold, and whether their copies still agree."
+    },
+    "memory.index.fix": {
+      "area": "memory",
+      "effect": "write",
+      "summary": "Apply MEMORY.md index repairs from memory.index.plan (with a backup).",
+      "plan": "apply=true"
+    },
+    "memory.index.plan": {
+      "area": "memory",
+      "effect": "read",
+      "summary": "What is wrong with an agent's MEMORY.md index, as a list of fixes (never writes)."
+    },
+    "memory.list": {
+      "area": "memory",
+      "effect": "read",
+      "summary": "An agent's memory files with index entry, size and staleness."
+    },
+    "memory.merge.apply": {
+      "area": "memory",
+      "effect": "destructive",
+      "summary": "Write one agreed version of a shared memory file over every copy (backups kept).",
+      "plan": "confirm=true"
+    },
+    "memory.merge.draft": {
+      "area": "memory",
+      "effect": "read",
+      "summary": "The editable union of every copy of a shared memory file, to edit down and apply."
+    },
+    "memory.semantic.build": {
+      "area": "memory",
+      "effect": "run",
+      "summary": "Embed changed memory files so memory.ask can search them (uses the embeddings provider)."
+    },
+    "memory.sync": {
+      "area": "memory",
+      "effect": "destructive",
+      "summary": "Overwrite every copy of a shared memory file with one source copy (backups kept).",
+      "plan": "confirm=true"
+    },
+    "migration.verify": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "Pass/fail check that a machine migration of the agent setup worked."
+    },
+    "missions.answer": {
+      "area": "missions",
+      "effect": "write",
+      "summary": "Answer the question a mission is waiting on (or skip it)."
+    },
+    "missions.approve": {
+      "area": "missions",
+      "effect": "write",
+      "summary": "Approve or reject a mission round waiting for approval."
+    },
+    "missions.cancel": {
+      "area": "missions",
+      "effect": "destructive",
+      "summary": "Cancel a mission run; its in-flight delegated tasks are cancelled."
+    },
+    "missions.conversation": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "The full transcript of one conversation inside a mission run."
+    },
+    "missions.council": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "One chaired debate inside a mission run: question, members, votes and outcome."
+    },
+    "missions.guide": {
+      "area": "missions",
+      "effect": "write",
+      "summary": "Steer an adaptive mission: the text reaches its lead at the next planning step."
+    },
+    "missions.list": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "Mission runs, newest first, with engine, cost and tokens."
+    },
+    "missions.outcomes": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "What orchestration has observed across finished missions, grouped by strategy."
+    },
+    "missions.pause": {
+      "area": "missions",
+      "effect": "write",
+      "summary": "Pause a live mission (the current wave finishes first)."
+    },
+    "missions.preview": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "What missions.start would launch with the same arguments, without launching; reports every refusal."
+    },
+    "missions.rerun": {
+      "area": "missions",
+      "effect": "run",
+      "summary": "Run a finished mission again as a new run (same goal, team and limits)."
+    },
+    "missions.resume": {
+      "area": "missions",
+      "effect": "run",
+      "summary": "Resume a paused or interrupted mission."
+    },
+    "missions.run.delete": {
+      "area": "missions",
+      "effect": "destructive",
+      "summary": "Delete a finished mission run from history (outputs stay on disk)."
+    },
+    "missions.start": {
+      "area": "missions",
+      "effect": "run",
+      "summary": "Start a mission: a lead agent plans in rounds and delegates to a team toward a goal, within hard limits."
+    },
+    "missions.status": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "One mission run in detail: rounds, steps, budget, criteria verdicts and what it waits on."
+    },
+    "missions.store": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "Health of the missions store (read and save state)."
+    },
+    "missions.trace": {
+      "area": "missions",
+      "effect": "read",
+      "summary": "The append-only decision journal of an adaptive mission."
+    },
+    "needs.act": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Press a button on a Needs You row (approve, reject, allow, deny, resume, answer...)."
+    },
+    "needs.clear": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Hide Needs You rows (they return if the condition happens again)."
+    },
+    "needs.list": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "The Needs You queue: only things the farm is blocked on until a person acts."
+    },
+    "needs.restore": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Bring every cleared Needs You row back."
+    },
+    "notices.dismiss": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Remove a notice from the user's board (undo with notices.undo); also clears read notices in bulk."
+    },
+    "notices.edit": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Change what a notice says (title, type, level, body, sections)."
+    },
+    "notices.export": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "The Notices board (filtered) as a Markdown document."
+    },
+    "notices.list": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "List notices with filters (type, level, agent, unread, status, handled, project...)."
+    },
+    "notices.pin": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Pin or unpin a notice (pinned notices survive sweeps)."
+    },
+    "notices.post": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Post ONE message to the user's Notices board (news, report, result, reminder, suggestion, warning or question)."
+    },
+    "notices.project": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "File notices under a project or clear their project."
+    },
+    "notices.read": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Mark one notice, or all, as read."
+    },
+    "notices.resolve": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Mark your question handled after acting on the user's answer (does not remove it from the board)."
+    },
+    "notices.stars": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Rate a notice 0-3 stars (starred notices survive sweeps)."
+    },
+    "notices.undo": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Restore the last notice removal."
+    },
+    "now.get": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "The Now snapshot: blocking items, running Console sessions, today's spend, quota and latest notices."
+    },
+    "packs.gallery": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "List agent packs offered by the configured galleries (install with agents.pack.import)."
+    },
+    "parallel.run": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Fan prompts out over git worktrees, one headless run each (plans by default; dryRun=false launches).",
+      "plan": "dryRun=false"
+    },
+    "performance.summary": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "The published-content performance snapshot used in briefs."
+    },
+    "plan.delete": {
+      "area": "automation",
+      "effect": "destructive",
+      "summary": "Delete many schedules, triggers, workflows or templates at once (no undo)."
+    },
+    "policies.delete": {
+      "area": "accounts",
+      "effect": "destructive",
+      "summary": "Delete a named account-selection rule; refused while another rule depends on it."
+    },
+    "policies.list": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "List account-selection rules (@emptiest, @pool, @standing, @round-robin and the user's own) and what each picks now."
+    },
+    "policies.save": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Create or replace a named account-selection rule."
+    },
+    "presets.apply": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Apply a preset (Economy, Balanced, Quality or the user's own) at a level.",
+      "plan": "dryRun=true"
+    },
+    "presets.delete": {
+      "area": "workflows",
+      "effect": "destructive",
+      "summary": "Delete one of the user's own presets."
+    },
+    "presets.list": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "The preset library: built-in cost presets, the user's own, launch profiles and sentry presets."
+    },
+    "presets.save": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Save one of the user's own presets."
+    },
+    "pricing.rules": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Model price rules (USD per 1M tokens) and models that ran but have no price."
+    },
+    "pricing.set": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Add or replace a model price rule, or replace the whole price table."
+    },
+    "projects.analysis": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "A project's work patterns: weekly figures, rhythm, cycle time, most-written files."
+    },
+    "projects.archive": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Move a project's folder to the archive, or restore it.",
+      "plan": "apply=true"
+    },
+    "projects.archived": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "What sits in the projects archive folder."
+    },
+    "projects.assign": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Attach a session to a project, move it, or explicitly file it under none."
+    },
+    "projects.backlog": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "A project's backlog items with code, area, kind, priority, state and dependencies."
+    },
+    "projects.backlog.add": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Add an item to a project's backlog (filed under an area with the next free code)."
+    },
+    "projects.backlog.archive": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Move closed backlog items under an archive heading at the end of the same file."
+    },
+    "projects.backlog.check": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Change one backlog item's state: open, doing, done or cancelled (one character changes)."
+    },
+    "projects.backlog.code": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Give an uncoded inbox capture a code and an area."
+    },
+    "projects.backlog.gather": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Pull every part under its whole in the backlog queue."
+    },
+    "projects.backlog.hold": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Park or un-park a backlog item (still open, just not to be started yet)."
+    },
+    "projects.backlog.move": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Move a backlog item up, down, to the top or bottom of the queue."
+    },
+    "projects.backlog.next": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "What to work on next: startable backlog items in queue order, with blocked and parked ones listed apart."
+    },
+    "projects.backlog.open": {
+      "area": "projects",
+      "effect": "ui",
+      "summary": "Open the backlog document at one item's line for the user."
+    },
+    "projects.backlog.promote": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Move a work-queue item into a project's backlog (the queue item is closed)."
+    },
+    "projects.backlog.queue": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "The backlog's working order (the queue block at the top of Backlog.md)."
+    },
+    "projects.backlog.reorder": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Put one backlog item directly before or after another in the queue."
+    },
+    "projects.backlog.set": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Change a backlog item's fields (priority, effort, kinds, due, part-of, waits-on, text)."
+    },
+    "projects.backlog.tidy": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Put the backlog file back in order (items under their own headings, sorted)."
+    },
+    "projects.backlog.under": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Move one part directly under its whole in the backlog queue."
+    },
+    "projects.backloglog": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Rebuild Backloglog.md from the track ledger and the backlog."
+    },
+    "projects.brief": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "The project brief a session started under the project receives (regenerate=true rewrites it)."
+    },
+    "projects.code": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "A project's code roots: commits per root and files its sessions wrote."
+    },
+    "projects.cost": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "One project's spend: total, today, per-day series, by agent and model, burn rate."
+    },
+    "projects.create": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Create a project and its documents folder (optionally from a template)."
+    },
+    "projects.current": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Read or set this window's active project (new sessions are filed under it)."
+    },
+    "projects.decision.add": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Record a decision as its own file (ADR style) in the project."
+    },
+    "projects.deliver": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Record a deliverable (what shipped, version, when, where) in the project's deliverables table."
+    },
+    "projects.doc.backups": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "Earlier versions of one project document kept by Agent Farm."
+    },
+    "projects.doc.list": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "Files in a project's documents folder with the role each declares."
+    },
+    "projects.doc.read": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "Read one project document (returns mtimeMs for a safe write)."
+    },
+    "projects.doc.write": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Create or replace a project document; replacing needs expectMtime from projects.doc.read."
+    },
+    "projects.get": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "One project in full: folder, repos, people, budgets, cost, warnings, document roles."
+    },
+    "projects.handover": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "The cold-start letter for a project as Markdown."
+    },
+    "projects.health": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "Everything currently wrong across projects (missing folders, budgets, stale, charter gaps)."
+    },
+    "projects.list": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "Every project with cost rollup and warnings."
+    },
+    "projects.log": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Add one line to the project's worklog (the closing duty of a session that did something)."
+    },
+    "projects.people.set": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Set who the project's people are and their roles."
+    },
+    "projects.plan": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "The project's plan as items (section, done, ids, dates)."
+    },
+    "projects.plan.add": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Add an open item to the project's plan."
+    },
+    "projects.plan.check": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Tick or untick one plan item."
+    },
+    "projects.rename": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Rename a project and its folder (the id never changes)."
+    },
+    "projects.report": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "One project written up as Markdown for a period."
+    },
+    "projects.rescan": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Reconcile the project registry with the folders on disk."
+    },
+    "projects.sessions": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "The sessions that belong to one project, with why each belongs."
+    },
+    "projects.set": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Update a project's fields (status, kind, summary, folder, repos, agents, budgets...)."
+    },
+    "projects.suggest": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "Proposed project for each unfiled session, with evidence."
+    },
+    "projects.suggest.apply": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "File the proposed sessions under their projects."
+    },
+    "projects.template.delete": {
+      "area": "projects",
+      "effect": "destructive",
+      "summary": "Delete a saved project template."
+    },
+    "projects.template.save": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Save a project as a reusable template."
+    },
+    "projects.templates": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "The saved project templates and what each carries."
+    },
+    "projects.timeline": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "A project's whole history as one chronological list."
+    },
+    "projects.track": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Record that you worked on a backlog item in this turn (feeds the track ledger)."
+    },
+    "projects.track.note.restore": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Restore the full text of a truncated closing note in the track ledger."
+    },
+    "projects.track.rebuild": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Rebuild a project's backlog log from its sessions."
+    },
+    "projects.track.restore": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Restore the full text of a truncated round in the track ledger."
+    },
+    "projects.tracks": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "How a backlog item was worked on before: every session and turn that touched it."
+    },
+    "projects.tracks.backfill": {
+      "area": "projects",
+      "effect": "write",
+      "summary": "Reconstruct tracks for items closed before tracking existed, by searching transcripts."
+    },
+    "projects.work": {
+      "area": "projects",
+      "effect": "read",
+      "summary": "What a project has in flight: tasks, missions, notices, queue items, schedules and triggers."
+    },
+    "prompts.list": {
+      "area": "console",
+      "effect": "read",
+      "summary": "The user's saved prompt snippets (from their markdown file), with optional search."
+    },
+    "prompts.setFile": {
+      "area": "console",
+      "effect": "write",
+      "summary": "Point saved prompts at a markdown file (empty clears)."
+    },
+    "providers.add": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Add a provider route (an alternative endpoint for Claude Code or OpenCode); keys are stored only by a person."
+    },
+    "providers.bindSecret": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Sign a provider route in with a Farm Secret by name."
+    },
+    "providers.contract": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Whether the installed OpenCode still accepts Agent Farm's route format (probe result)."
+    },
+    "providers.copy": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Duplicate a provider route under a new id (without its key)."
+    },
+    "providers.list": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "The provider routes Agent Farm holds, with engines, endpoints, tiers and key status."
+    },
+    "providers.ownership": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Which source is the authority for each piece of provider data, per engine."
+    },
+    "providers.remove": {
+      "area": "engines",
+      "effect": "destructive",
+      "summary": "Remove a provider route and delete its key from the OS keychain (irreversible)."
+    },
+    "providers.runtime": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "What a launch of an agent on an engine would actually run on: route, tier, injected and cleared environment."
+    },
+    "providers.set": {
+      "area": "engines",
+      "effect": "write",
+      "summary": "Change a provider route (the id cannot change)."
+    },
+    "providers.status": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Free readiness check of each provider route (key present, tiers mapped, conflicts)."
+    },
+    "providers.test": {
+      "area": "engines",
+      "effect": "run",
+      "summary": "Run one real turn through one provider route to prove it answers."
+    },
+    "quality.sample": {
+      "area": "insights",
+      "effect": "run",
+      "summary": "Score a sample of recent outputs with a cheap model now (cost-bearing).",
+      "plan": "confirm=true"
+    },
+    "queue.add": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Drop one item into the user's work queue (a fix-this / do-this that waits until handled)."
+    },
+    "queue.answer": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Answer a blocked work item; it goes back into the pipeline."
+    },
+    "queue.archive": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Archive a handled work item (kept, not deleted)."
+    },
+    "queue.clearHandled": {
+      "area": "notices",
+      "effect": "destructive",
+      "summary": "Delete every handled (done or dropped) work item; pinned and archived ones stay."
+    },
+    "queue.delegate": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Mark work items delegated and link the task or mission doing them."
+    },
+    "queue.edit": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Edit a work item's fields."
+    },
+    "queue.fromNotice": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Turn a notice into a work item (the item carries the notice)."
+    },
+    "queue.get": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "One work item in full."
+    },
+    "queue.group": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Put work items into a batch group before delegating them together."
+    },
+    "queue.groups": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "Digest of active batch groups, ripest first."
+    },
+    "queue.list": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "List work items with filters (status, active, target, engine, source notice agent...)."
+    },
+    "queue.maturity": {
+      "area": "notices",
+      "effect": "read",
+      "summary": "The sweep decision: which groups are ripe to delegate now and which items are starving."
+    },
+    "queue.pin": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Pin or unpin a work item."
+    },
+    "queue.project": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "File work items under a project or clear their project."
+    },
+    "queue.remove": {
+      "area": "notices",
+      "effect": "destructive",
+      "summary": "Delete a handled work item (live items are refused)."
+    },
+    "queue.removeMany": {
+      "area": "notices",
+      "effect": "destructive",
+      "summary": "Delete several handled work items."
+    },
+    "queue.route": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Say which engine, model, effort and account should take a work item."
+    },
+    "queue.setStatus": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Move a work item along the pipeline (captured, grouped, delegated, done, blocked, dropped)."
+    },
+    "queue.setUrgency": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Set a work item's urgency (normal, soon, urgent)."
+    },
+    "queue.stamp": {
+      "area": "notices",
+      "effect": "write",
+      "summary": "Handle a work item: record the outcome (stamp, resolution, answer) and close it."
+    },
+    "remote.audit": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "What paired phones did, newest first."
+    },
+    "remote.devices": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "The paired phones with scope and last-seen information."
+    },
+    "remote.firewall": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "Whether Windows Firewall lets phones in, and why not."
+    },
+    "remote.firewall.allow": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Add a firewall rule so phones can connect (Windows shows an admin prompt the user must accept).",
+      "asks": true
+    },
+    "remote.listen": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Choose where the phone host listens (off, local, lan, tailscale) and on which port."
+    },
+    "remote.pair": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "A one-time pairing link (QR) for a new phone."
+    },
+    "remote.revoke": {
+      "area": "remote",
+      "effect": "destructive",
+      "summary": "Revoke a paired phone (or all); it must pair again."
+    },
+    "remote.scope": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Change a paired phone's scope (read, answer, manage, admin)."
+    },
+    "remote.status": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "The phone host: listening state, addresses, certificate, sockets, wake readiness."
+    },
+    "remote.wake.test": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Send a test wake message to paired phones."
+    },
+    "reports.cost": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Why today was expensive: today against the 14-day median per agent, plus the heaviest sessions."
+    },
+    "reports.fleet": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "The comparative fleet report as Markdown (sessions, cost, tokens, quality, findings per agent)."
+    },
+    "reports.instructions": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "One agent's instruction history with the measured effect of each version."
+    },
+    "reports.outputs": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Digest of what headless runs actually wrote in the window."
+    },
+    "reports.tasks": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Task analytics as JSON: throughput, success rate, durations, costs and forecast."
+    },
+    "reports.triggers": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Trigger reliability for the last 7 days (fired, failed, delay, never-fired)."
+    },
+    "reports.weekly": {
+      "area": "insights",
+      "effect": "run",
+      "summary": "Write the weekly summary with a cheap model (cost-bearing).",
+      "plan": "confirm=true"
+    },
+    "schedules.add": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Install a schedule (daily, weekly or once) that queues an agent run at a set local time."
+    },
+    "schedules.delete": {
+      "area": "automation",
+      "effect": "destructive",
+      "summary": "Delete a schedule."
+    },
+    "schedules.edit": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Edit a schedule in place (time, prompt, agent, run settings, fireIf)."
+    },
+    "schedules.forecast": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "What schedules will fire in the next days and how busy that keeps the farm."
+    },
+    "schedules.list": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "Installed schedules with the run settings each fires with."
+    },
+    "schedules.runNow": {
+      "area": "automation",
+      "effect": "run",
+      "summary": "Queue a schedule's run right now, outside its schedule."
+    },
+    "schedules.toggle": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Enable or disable a schedule."
+    },
+    "search.index.build": {
+      "area": "knowledge",
+      "effect": "run",
+      "summary": "Build or catch up the transcript meaning (semantic) index; uses the embeddings provider."
+    },
+    "search.transcripts": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Search every engine's transcripts, agent memory and live events with the Search page's query language."
+    },
+    "secrets.list": {
+      "area": "engines",
+      "effect": "read",
+      "summary": "Farm Secrets by name (never values), with scope and where each is bound."
+    },
+    "sentry.handover": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "Where a session's handover note is, and how that was decided."
+    },
+    "sentry.instructions": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "The user's saved instructions as the sentry leader receives them."
+    },
+    "sentry.leader": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "The sentry leader's budget and ledger: may it be woken now, what it spent today."
+    },
+    "sentry.pause": {
+      "area": "sentry",
+      "effect": "write",
+      "summary": "Hold the sentry campaign (no new rounds until resumed; state is kept)."
+    },
+    "sentry.probe": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "Would a wake policy wake the sentry leader, judged against the last round's measurements."
+    },
+    "sentry.prompt": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "The sentence the next sentry round would open with, from a diagnosis of a session (no model call)."
+    },
+    "sentry.resume": {
+      "area": "sentry",
+      "effect": "run",
+      "summary": "Let a paused sentry campaign continue."
+    },
+    "sentry.start": {
+      "area": "sentry",
+      "effect": "run",
+      "summary": "Start a sentry campaign: unattended rounds working a project backlog item by item until stopped (spends money)."
+    },
+    "sentry.status": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "What the sentry campaign is doing and why."
+    },
+    "sentry.stop": {
+      "area": "sentry",
+      "effect": "destructive",
+      "summary": "Switch the sentry campaign off (a running round is left alone)."
+    },
+    "sentry.templates": {
+      "area": "sentry",
+      "effect": "read",
+      "summary": "Which words a sentry campaign would start the next session with, and their source."
+    },
+    "service.install": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Install the headless service so schedules and watch triggers fire while VS Code is closed (Windows; plans first).",
+      "plan": "confirm=true"
+    },
+    "service.remove": {
+      "area": "automation",
+      "effect": "destructive",
+      "summary": "Stop and unregister the headless service (plans first).",
+      "plan": "confirm=true"
+    },
+    "service.status": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "Whether the headless service is installed and running."
+    },
+    "sessions.answerPermission": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Answer a session blocked on a permission prompt (sends the keys; only on the user's instruction)."
+    },
+    "sessions.bindings": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Which automation run produced which transcript, and where that link is missing."
+    },
+    "sessions.bridgeGuard": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "The hook that refuses disk searches for session ids, and what it stopped."
+    },
+    "sessions.color": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Put a colour dot on a session (or clear it)."
+    },
+    "sessions.context": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "The real per-category context token table of a finished Claude session (no token cost)."
+    },
+    "sessions.contextGuard": {
+      "area": "relay",
+      "effect": "read",
+      "summary": "Context and quota handover thresholds and what each session has been told."
+    },
+    "sessions.contextGuard.set": {
+      "area": "relay",
+      "effect": "write",
+      "summary": "Set the context and quota handover thresholds and the wording of the orders."
+    },
+    "sessions.dismiss": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Remove a session from the Live Timeline without touching the session."
+    },
+    "sessions.end": {
+      "area": "sessions",
+      "effect": "destructive",
+      "summary": "End a live session's process (asks the user first); the transcript stays resumable.",
+      "asks": true
+    },
+    "sessions.export": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "One conversation as a Markdown document."
+    },
+    "sessions.files": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "What a Claude session changed in code: files written with line counts."
+    },
+    "sessions.find": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Find a session by id, id prefix, chain id, path, title, agent or label (every engine)."
+    },
+    "sessions.forceKill": {
+      "area": "sessions",
+      "effect": "destructive",
+      "summary": "Stop a session and the process tree above it (asks the user first).",
+      "asks": true
+    },
+    "sessions.interrupt": {
+      "area": "sessions",
+      "effect": "destructive",
+      "summary": "Stop the turn a live session is running; the session survives."
+    },
+    "sessions.lastLaunch": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "What an agent was last started with, per engine."
+    },
+    "sessions.live": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Sessions the live monitor tracks now: status, current tool, cost, alive."
+    },
+    "sessions.opencodeExport": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "One OpenCode conversation in the engine's own export format."
+    },
+    "sessions.opencodeSync": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Read OpenCode's own history into the sessions tables."
+    },
+    "sessions.page": {
+      "area": "sessions",
+      "effect": "ui",
+      "summary": "Open the Sessions page for the user, optionally scoped to an agent, project or mission."
+    },
+    "sessions.pin": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Pin or unpin sessions on the user's shelf."
+    },
+    "sessions.read": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "What a session said, as messages, in one shape for every engine (paged)."
+    },
+    "sessions.recent": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Most recent sessions across the fleet, every engine, with filters."
+    },
+    "sessions.rename": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Rename a session."
+    },
+    "sessions.rescan": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Bring the session index up to date with transcripts on disk."
+    },
+    "sessions.resumeRoute": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Which provider route a resume of a session would run on."
+    },
+    "sessions.shelf": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "The user's pinned sessions."
+    },
+    "sessions.shellGuard": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "The hook that refuses risky shell payloads, and what it stopped."
+    },
+    "sessions.start": {
+      "area": "sessions",
+      "effect": "run",
+      "summary": "Start an interactive session for an agent (terminal or Console) on any engine."
+    },
+    "sessions.tag": {
+      "area": "sessions",
+      "effect": "write",
+      "summary": "Set labels on sessions."
+    },
+    "sessions.whoami": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Which session am I: the calling session identified from evidence (never from the folder), with its Console card."
+    },
+    "settings.get": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "One Agent Farm setting in full: schema, default, current value, where it is filed."
+    },
+    "settings.list": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "Every Agent Farm setting by section, with current values."
+    },
+    "settings.paths": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "Where each path setting actually points on this machine."
+    },
+    "settings.reset": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Reset settings to their defaults (one key, a list, or a section).",
+      "plan": "dryRun=true"
+    },
+    "settings.set": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Write one Agent Farm setting at user scope (validated against the schema).",
+      "plan": "dryRun=true"
+    },
+    "settings.sets": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "Saved setting sets (named snapshots of changed settings)."
+    },
+    "settings.sets.apply": {
+      "area": "settings",
+      "effect": "destructive",
+      "summary": "Apply a saved setting set as the complete state (settings it does not mention are reset).",
+      "plan": "dryRun=true"
+    },
+    "settings.sets.delete": {
+      "area": "settings",
+      "effect": "destructive",
+      "summary": "Delete a saved setting set."
+    },
+    "settings.sets.export": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "Export saved setting sets as JSON."
+    },
+    "settings.sets.import": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Import setting sets from a file or JSON text.",
+      "plan": "dryRun=true"
+    },
+    "settings.sets.save": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Save the current non-default settings as a named set."
+    },
+    "studio.asset.register": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Add a file the farm did not generate to the Studio gallery."
+    },
+    "studio.assets": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Generated media assets with prompt, model, result, triage state and filing."
+    },
+    "studio.assign": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "File an asset against a production and scene (or detach it)."
+    },
+    "studio.brand.get": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "A production's brand kit (style, colors, typography, voice, characters...)."
+    },
+    "studio.brand.save": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Save a production's brand kit as a reusable preset."
+    },
+    "studio.brand.set": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Change a production's brand kit."
+    },
+    "studio.export": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Export a production's approved assets as an editing timeline (FCPXML and/or EDL)."
+    },
+    "studio.library": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "The Studio wall as data: media records with stage, status, score."
+    },
+    "studio.library.backfill": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "File media that exists only in the outputs folder into the library, once (apply=true acts).",
+      "plan": "apply=true"
+    },
+    "studio.library.edit": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Record a Studio decision on a library record (select, reject, tags, score, note)."
+    },
+    "studio.production.new": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Create a production manifest (its scene list) in an agent's folder."
+    },
+    "studio.productions": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Every production with its scenes, statuses and attached assets."
+    },
+    "studio.rerun": {
+      "area": "studio",
+      "effect": "run",
+      "summary": "Ask the media model again: same input, a varied input, or a new seed."
+    },
+    "studio.scene.status": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Move a scene through draft, generating, review, approved."
+    },
+    "studio.triage": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Keep or reject generated assets."
+    },
+    "suggestions.apply": {
+      "area": "insights",
+      "effect": "write",
+      "summary": "Append a suggested rule to an agent's CLAUDE.md under the section Agent Farm owns."
+    },
+    "suggestions.dismiss": {
+      "area": "insights",
+      "effect": "write",
+      "summary": "Turn down an instruction suggestion."
+    },
+    "suggestions.list": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "Instruction suggestions mined from corrections the user repeated, with evidence."
+    },
+    "suggestions.scan": {
+      "area": "insights",
+      "effect": "run",
+      "summary": "Scan one agent's recent corrections for repeated instructions with a cheap model (cost-bearing).",
+      "plan": "confirm=true"
+    },
+    "superpowers.hook": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "The exact engineering-discipline text a session receives when Superpowers is on."
+    },
+    "superpowers.set": {
+      "area": "agents",
+      "effect": "write",
+      "summary": "Turn the Superpowers engineering discipline on or off by default for one agent."
+    },
+    "superpowers.status": {
+      "area": "agents",
+      "effect": "read",
+      "summary": "Where the Superpowers skills are and which agents start with them on."
+    },
+    "sync.merge": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Merge another machine's copy of a store into this one under its lock."
+    },
+    "tasks.add": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Queue (and by default start) one unattended agent run; the core way to make an agent do a job."
+    },
+    "tasks.analytics.export": {
+      "area": "insights",
+      "effect": "read",
+      "summary": "The Task Analytics page as a Markdown document."
+    },
+    "tasks.cancel": {
+      "area": "tasks",
+      "effect": "destructive",
+      "summary": "Cancel a queued or running task."
+    },
+    "tasks.clearFinished": {
+      "area": "tasks",
+      "effect": "destructive",
+      "summary": "Clear finished tasks from the board (archived first; output files are deleted)."
+    },
+    "tasks.complete": {
+      "area": "tasks",
+      "effect": "write",
+      "summary": "Mark a running task done by hand (stops its process)."
+    },
+    "tasks.delete": {
+      "area": "tasks",
+      "effect": "destructive",
+      "summary": "Delete one task row (archived; its output file is deleted)."
+    },
+    "tasks.export": {
+      "area": "tasks",
+      "effect": "read",
+      "summary": "The task board as a Markdown table."
+    },
+    "tasks.get": {
+      "area": "tasks",
+      "effect": "read",
+      "summary": "One task in detail: run dimensions, cost, output and the events that happened to it."
+    },
+    "tasks.history": {
+      "area": "tasks",
+      "effect": "read",
+      "summary": "Archived task history by month."
+    },
+    "tasks.historyOpen": {
+      "area": "tasks",
+      "effect": "ui",
+      "summary": "Open the Tasks page with the archive shown."
+    },
+    "tasks.list": {
+      "area": "tasks",
+      "effect": "read",
+      "summary": "The task board rows (queued, running, finished) with engine and cost caveats."
+    },
+    "tasks.move": {
+      "area": "tasks",
+      "effect": "write",
+      "summary": "Reorder a queued task among that agent's queued tasks."
+    },
+    "tasks.rerun": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Re-run a finished task as a fresh copy, changing only what you pass."
+    },
+    "tasks.restore": {
+      "area": "tasks",
+      "effect": "write",
+      "summary": "Put a deleted task back on the board from the archive."
+    },
+    "tasks.runNext": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Move a queued task to the front and request an immediate start."
+    },
+    "tasks.start": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Start a queued task where it is (parked with the reason if a ceiling holds it)."
+    },
+    "tasks.supervision": {
+      "area": "tasks",
+      "effect": "write",
+      "summary": "Give your decision on a supervised retry row (let it go, run now, or edit its prompt)."
+    },
+    "tasks.unpark": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Release a task held by a ceiling and ask for the launch again."
+    },
+    "telegram.commands": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "The Telegram chat commands and what each would answer now (nothing is sent)."
+    },
+    "telegram.digest": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "The card a phone gets for a conversation right now."
+    },
+    "telegram.focus": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Set which conversation a Telegram chat's plain messages go to."
+    },
+    "telegram.inbox": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "Messages a phone has waiting for a conversation, and today's phone budget."
+    },
+    "telegram.routing": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "Which conversation a phone message would go to, and why."
+    },
+    "telegram.status": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "Whether the Telegram bridge is connected and what is wrong if not."
+    },
+    "templates.add": {
+      "area": "tasks",
+      "effect": "write",
+      "summary": "Save a reusable task template with its run settings."
+    },
+    "templates.delete": {
+      "area": "tasks",
+      "effect": "destructive",
+      "summary": "Delete a task template."
+    },
+    "templates.list": {
+      "area": "tasks",
+      "effect": "read",
+      "summary": "Saved task templates with their run settings."
+    },
+    "templates.run": {
+      "area": "tasks",
+      "effect": "run",
+      "summary": "Run a template as a task now (optionally overriding run settings)."
+    },
+    "terminal.render.apply": {
+      "area": "settings",
+      "effect": "write",
+      "summary": "Repair terminal rendering settings that garble agent TUIs."
+    },
+    "terminal.render.get": {
+      "area": "settings",
+      "effect": "read",
+      "summary": "Current terminal rendering settings and whether the repair is in place."
+    },
+    "timeline.corpus": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "The full words of one transcript step at a given instant."
+    },
+    "toolbox.copy": {
+      "area": "toolbox",
+      "effect": "write",
+      "summary": "Copy a skill or MCP server from one agent to another, or share a skill to user scope."
+    },
+    "toolbox.enable": {
+      "area": "toolbox",
+      "effect": "write",
+      "summary": "Switch an MCP server (per agent) or a plugin (user scope) on or off without removing it."
+    },
+    "toolbox.inspect": {
+      "area": "toolbox",
+      "effect": "read",
+      "summary": "One installed skill, subagent, command, MCP server, hook or plugin in detail."
+    },
+    "toolbox.install": {
+      "area": "toolbox",
+      "effect": "write",
+      "summary": "Install a skill, subagent or command (scaffolded file), or add or edit an MCP server."
+    },
+    "toolbox.list": {
+      "area": "toolbox",
+      "effect": "read",
+      "summary": "Inventory of installed skills, subagents, commands, MCP servers, hooks, plugins and styles."
+    },
+    "toolbox.mcptools": {
+      "area": "toolbox",
+      "effect": "read",
+      "summary": "Connect to an MCP server and list its tools."
+    },
+    "toolbox.remove": {
+      "area": "toolbox",
+      "effect": "destructive",
+      "summary": "Remove an installed tool (a backup is left beside it)."
+    },
+    "toolbox.slashCommands": {
+      "area": "toolbox",
+      "effect": "read",
+      "summary": "What can be typed after \"/\" in a given place, by source."
+    },
+    "tools.recipes": {
+      "area": "studio",
+      "effect": "read",
+      "summary": "Local ffmpeg media recipes (split, concat, reframe, subtitles...) and their parameters."
+    },
+    "tools.run": {
+      "area": "studio",
+      "effect": "write",
+      "summary": "Run one local ffmpeg media recipe now (no model, no tokens)."
+    },
+    "triggers.add": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Install a trigger (file/folder watch, agent hook event, or webhook) that starts a task, dispatch or workflow."
+    },
+    "triggers.delete": {
+      "area": "automation",
+      "effect": "destructive",
+      "summary": "Delete a trigger."
+    },
+    "triggers.edit": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Edit a trigger in place."
+    },
+    "triggers.fire": {
+      "area": "automation",
+      "effect": "run",
+      "summary": "Fire a trigger now as a manual test of its action."
+    },
+    "triggers.list": {
+      "area": "automation",
+      "effect": "read",
+      "summary": "Installed triggers with the run settings each fires with."
+    },
+    "triggers.toggle": {
+      "area": "automation",
+      "effect": "write",
+      "summary": "Enable or disable a trigger."
+    },
+    "turns.export": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Turns (filtered) as a Markdown document."
+    },
+    "turns.list": {
+      "area": "sessions",
+      "effect": "read",
+      "summary": "Every user turn across the farm, newest first, with filters."
+    },
+    "ui.ctxmenu": {
+      "area": "basics",
+      "effect": "read",
+      "summary": "What a right-click offers on a kind of row in the extension."
+    },
+    "usage.engines": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Plan usage left on every engine, or the reason a figure is not available."
+    },
+    "usage.lap": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Read the usage \"lap\" (count-from-here mark)."
+    },
+    "usage.lap.clear": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "End the usage lap; figures go back to all-time."
+    },
+    "usage.lap.reset": {
+      "area": "accounts",
+      "effect": "write",
+      "summary": "Start the usage lap now (or at a given moment) to measure a piece of work."
+    },
+    "usage.plan": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "Claude subscription rate-limit state: 5-hour and weekly utilization with reset times."
+    },
+    "usage.window": {
+      "area": "accounts",
+      "effect": "read",
+      "summary": "The rolling 5-hour window as transcripts record it, raw and weighted tokens."
+    },
+    "web.bind": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Move the read-only web view's binding (local or lan) while it is on.",
+      "plan": "confirm=true"
+    },
+    "web.enable": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Turn on the read-only web view and return the link a phone opens.",
+      "plan": "confirm=true"
+    },
+    "web.status": {
+      "area": "remote",
+      "effect": "read",
+      "summary": "Whether a phone can read this farm through the web view right now, and why not."
+    },
+    "web.stop": {
+      "area": "remote",
+      "effect": "write",
+      "summary": "Turn the read-only web view off (the token is kept)."
+    },
+    "web.token.new": {
+      "area": "remote",
+      "effect": "destructive",
+      "summary": "Mint a new web-view token; every old link stops working.",
+      "plan": "confirm=true"
+    },
+    "wiki.candidates.add": {
+      "area": "knowledge",
+      "effect": "write",
+      "summary": "Mark a turn or a session as worth compiling into the wiki (writes only to the candidate pool)."
+    },
+    "wiki.candidates.edit": {
+      "area": "knowledge",
+      "effect": "write",
+      "summary": "Change a wiki candidate (topics, note, excluded turns, state, pages)."
+    },
+    "wiki.candidates.list": {
+      "area": "knowledge",
+      "effect": "read",
+      "summary": "List the wiki candidate pool."
+    },
+    "wiki.candidates.remove": {
+      "area": "knowledge",
+      "effect": "destructive",
+      "summary": "Remove marks from the wiki candidate pool (pages already written stay)."
+    },
+    "wiki.categories": {
+      "area": "knowledge",
+      "effect": "read",
+      "summary": "Wiki category folders and the topics the candidate pool already uses."
+    },
+    "wiki.category.add": {
+      "area": "knowledge",
+      "effect": "write",
+      "summary": "Create one category folder under the wiki root."
+    },
+    "wiki.category.rename": {
+      "area": "knowledge",
+      "effect": "write",
+      "summary": "Rename or merge a wiki category everywhere it lives (folder, index, pool)."
+    },
+    "wiki.compile": {
+      "area": "knowledge",
+      "effect": "read",
+      "summary": "Assemble the brief needed to compile marked turns into the wiki (rules, root, candidates resolved)."
+    },
+    "wiki.compile.run": {
+      "area": "knowledge",
+      "effect": "run",
+      "summary": "Compile marked turns into the wiki with a headless run."
+    },
+    "wiki.health": {
+      "area": "knowledge",
+      "effect": "read",
+      "summary": "Whether the configured wiki root is a working wiki and what is missing."
+    },
+    "wiki.init": {
+      "area": "knowledge",
+      "effect": "write",
+      "summary": "Create the wiki root and its missing starter files (never rewrites existing files)."
+    },
+    "wiki.lint": {
+      "area": "knowledge",
+      "effect": "read",
+      "summary": "Check the wiki's shape: orphans, broken links, index gaps, nesting."
+    },
+    "wiki.status": {
+      "area": "knowledge",
+      "effect": "read",
+      "summary": "What the candidate pool and the wiki hold."
+    },
+    "workflows.add": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Create a workflow: a chain of steps (agent runs, checks, approvals, media, webhooks) with handoff between steps."
+    },
+    "workflows.addRecipe": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Install a ready-made workflow recipe in one call."
+    },
+    "workflows.answer": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Answer a workflow supervisor's open question (no args lists open questions)."
+    },
+    "workflows.decide": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Make the decision for a running workflow at its next step boundary (proceed, retry, jump, insert, stop)."
+    },
+    "workflows.delete": {
+      "area": "workflows",
+      "effect": "destructive",
+      "summary": "Delete a workflow definition (its triggers then point nowhere)."
+    },
+    "workflows.list": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "Defined workflows with the inputs each takes."
+    },
+    "workflows.live": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Change a running workflow's live settings from the next step (no runId lists running runs)."
+    },
+    "workflows.recipes": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "The workflow recipe book."
+    },
+    "workflows.resume": {
+      "area": "workflows",
+      "effect": "run",
+      "summary": "Resume a cut workflow run at the step that broke."
+    },
+    "workflows.roles": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "Who fills each role of a workflow, and why."
+    },
+    "workflows.run": {
+      "area": "workflows",
+      "effect": "run",
+      "summary": "Run a workflow now with optional inputs; returns the run id."
+    },
+    "workflows.select": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Answer a workflow select step (pick assets); no args lists open selections."
+    },
+    "workflows.status": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "Where one workflow run got to and what each step produced."
+    },
+    "workflows.steer": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Give a running workflow's supervisor a directive (applied at the next step boundary)."
+    },
+    "workflows.step.add": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Append one step to a workflow."
+    },
+    "workflows.step.delete": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Remove one step from a workflow by position."
+    },
+    "workflows.step.move": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Move one workflow step up or down."
+    },
+    "workflows.step.update": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Replace one step of a workflow by position."
+    },
+    "workflows.supervisor.status": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "What a workflow's supervisor decided at each checkpoint of a run."
+    },
+    "workflows.update": {
+      "area": "workflows",
+      "effect": "write",
+      "summary": "Rename a workflow or replace its whole step chain."
+    },
+    "workflows.wakeFields": {
+      "area": "workflows",
+      "effect": "read",
+      "summary": "The fields and operators workflow wake conditions can use, with presets."
+    }
+  }
+}

@@ -1,0 +1,3286 @@
+/**
+ * Session host — Agent Farm keeps the conversation, not just the terminal.
+ *
+ * One long-lived `claude` process per Console session, spoken to over the
+ * streaming JSON channel (consoleproto.ts). The user's own CLI and their own
+ * subscription: no API key of ours, no separate cost model, and the transcript
+ * still lands in `~/.claude/projects`, so every analytic, health and timeline
+ * engine keeps working exactly as before.
+ *
+ * What this class owns: spawning, the stdout line reader, the message queue,
+ * interrupts, live permission-mode changes, and a clean death. What it
+ * deliberately does NOT own: rendering (the panel), the flag vocabulary
+ * (launch.ts) or the protocol (consoleproto.ts).
+ */
+
+import * as cp from 'child_process';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { StringDecoder } from 'string_decoder';
+import { AgyState, newAgyState, translateAgy } from './agyproto';
+import { settleVerdict, swapPlaceholder } from './consoleRevive';
+import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
+import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
+import { spawnEnvironment } from './providerRuntime';
+import { routedModel } from './routeModels';
+import { t as tUi } from './i18n';
+import {
+    EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
+} from './consoleEngine';
+import { startCardPrefix } from './startCard';
+import {
+    OpencodeConfigOption, opencodeModelsFrom, opencodePermissionFor, opencodeResolveOption
+} from './opencode';
+import {
+    AcpChild, OpencodePermissionRequest, OpencodeRuntime, OpencodeRuntimeIo,
+    opencodePromptBlocks, opencodeRuntimeArgs
+} from './opencodeacp';
+import {
+    OpencodeState, newOpencodeState, opencodeReplay, opencodeTurnStarted,
+    translateOpencodeResult, translateOpencodeUpdate
+} from './opencodeproto';
+import {
+    AutoAnswerSettings, AutoAnswerView, autoAnswerSettings
+} from './autoAnswer';
+import { TimeoutAnswer, ownNote, ownResponse } from './autoAnswerPicks';
+import { AutoAnswerTimers } from './autoAnswerTimers';
+import {
+    acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
+    CarriedTotals, ConsoleMessage, ConsoleSessionState, carryOn, controlLine, drainAutoAnswer,
+    editQueued, hostArgs, IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued,
+    userMessageLine
+} from './consoleproto';
+import {
+    BYPASS, EffectivePermission, permissionLayerPaths, resolveEffectivePermission
+} from './permissionmode';
+import { isPolicyId, MACHINE_ACCOUNT_ID } from './accountPolicy';
+import { SetupChoice, confirmedChoice } from './liveChoice';
+import { StopFrom, stopWords } from './stopSource';
+import { ResumeRouteAsk, gateResumeRoute } from './consoleResumeRoute';
+
+/**
+ * What a path IS, as far as attaching goes.
+ *
+ * ‼️ THE CARRIER IS DECIDED HERE AND NOWHERE ELSE — not in the composer, not
+ * by the caller. Panel, bridge and any future entry point all come through
+ * this function, so a `.png` behaves identically however it was attached.
+ * An image can ride inside the message; anything else — including a folder —
+ * travels as a path for the agent's own `Read` (see Attachment).
+ */
+/**
+ * Is this dropped string a URI, or a plain path?
+ *
+ * ‼️ THE TEST NEEDS TWO CHARACTERS BEFORE THE COLON. A drag can carry
+ * `file:///d:/a/b.png` or bare `D:\a\b.png`, and the naive scheme test reads
+ * the second as a URI in the scheme "d" — `Uri.parse` does not refuse it, it
+ * quietly hands back a path that never existed, and the attachment vanishes
+ * with no error anywhere. Kept here rather than in the panel so the rule is
+ * testable without vscode.
+ */
+export function looksLikeUri(s: string): boolean {
+    return /^[a-z][a-z0-9+.-]+:/i.test(String(s ?? '').trim());
+}
+
+/**
+ * The conversation a per-turn engine would resume — whatever that engine calls
+ * it.
+ *
+ * ‼️ ONE QUESTION, ONE ANSWER. Codex calls it a `thread_id` and Antigravity a
+ * `conversation_id`, and they arrive on different events; every caller that
+ * needs "which conversation is this" asks here instead of reaching into the
+ * translator's own state and getting it right for one engine only.
+ */
+function threadOf(h: { codex?: CodexState; agy?: AgyState; gemini?: GeminiState }): string | undefined {
+    return h.agy?.conversationId ?? h.gemini?.sessionId ?? h.codex?.threadId;
+}
+
+/** A real UUID, because `--session-id` on Gemini is validated as one — a short
+ *  base-36 id like the rest of this file's would be refused. */
+const newUuid = (): string => crypto.randomUUID();
+
+/**
+ * The staged copy of a dropped/pasted file keeps the name the user knows.
+ *
+ * ‼️ `\w` IS ASCII. The rule that produced these names replaced every letter
+ * outside it, so "deneme dosyası.txt" was staged as "deneme dosyas_.txt" — the
+ * one string the user has to recognise their own file by, quietly mangled.
+ * Only what a Windows filename genuinely cannot hold is replaced.
+ */
+export function safeAttachmentName(name: string, mediaType = ''): string {
+    const clean = (s: string) => String(s ?? '')
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\\/:*?"<>|\x00-\x1f]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        // Windows silently drops a trailing dot or space, and a name that
+        // cannot be opened by what it is called is worse than a renamed one.
+        .replace(/[. ]+$/, '');
+
+    const raw = clean(name);
+    // ‼️ THE EXTENSION IS NOT DECORATION — IT DECIDES HOW THE FILE TRAVELS.
+    // `describeAttachment` reads the suffix to tell an image (which is embedded,
+    // so the model can SEE it) from everything else (handed over as a path). So
+    // the two ways a suffix can go missing are both handled here rather than
+    // left to produce a screenshot the model is merely TOLD about:
+    //   · a pasted screenshot often arrives with no name at all, and the
+    //     clipboard's media type is the only thing that knows what it is;
+    //   · a very long name must be shortened from the MIDDLE, because a plain
+    //     slice() cuts the suffix off the end.
+    const dot = raw.lastIndexOf('.');
+    let stem = dot > 0 ? raw.slice(0, dot) : raw;
+    let ext = dot > 0 ? raw.slice(dot) : '';
+    if (!ext) {
+        const known = Object.entries(IMAGE_MEDIA_TYPES)
+            .find(([, m]) => m === String(mediaType ?? '').toLowerCase());
+        if (known) { ext = known[0]; }
+    }
+    if (!stem) { stem = 'attachment'; }
+    const room = 120 - ext.length;
+    if (room > 0 && stem.length > room) { stem = stem.slice(0, room); }
+    return `${stem}${ext}`.replace(/[. ]+$/, '') || 'attachment';
+}
+
+export function describeAttachment(fsPath: string): Attachment | null {
+    let stat: fs.Stats;
+    try { stat = fs.statSync(fsPath); } catch { return null; }
+    const name = path.basename(fsPath);
+    if (stat.isDirectory()) { return { path: fsPath, name, bytes: 0, kind: 'path' }; }
+    const mediaType = IMAGE_MEDIA_TYPES[path.extname(fsPath).toLowerCase()];
+    return mediaType
+        ? { path: fsPath, name, bytes: stat.size, kind: 'image', mediaType }
+        : { path: fsPath, name, bytes: stat.size, kind: 'path' };
+}
+
+/** Bytes as the refusal message should say them — "4.7 MB", not "4928307". */
+function mb(bytes: number): string {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Kill a spawned process AND everything under it.
+ *
+ * On Windows a `shell: true` spawn gives us `cmd.exe`; `child.kill()` ends the
+ * shell and leaves `claude.exe` running forever. `taskkill /T` is what the
+ * task and mission runners already use for the same reason.
+ *
+ * ‼️ ON WINDOWS THE PLAIN KILL IS A FALLBACK, NEVER A COMPANION — the order is
+ * the whole thing. `child.kill()` returns having already terminated the shell,
+ * while `taskkill` is a process that has not been spawned yet; and
+ * `taskkill /PID p /T` RESOLVES p FIRST, so a p that died a millisecond ago is
+ * "process not found" and its descendants are never touched. Killing the
+ * wrapper first therefore ORPHANS the real `claude`, which keeps writing into
+ * the pipe this window still holds: an End session that ends nothing and an
+ * agent that goes on talking. So the tree kill goes first and alone, and the
+ * direct kill only runs if taskkill could not be started or came back angry.
+ */
+export function killTree(child: cp.ChildProcess): void {
+    const pid = child.pid;
+    if (!pid) { return; }
+    const plain = () => { try { child.kill(); } catch { /* already gone */ } };
+    if (process.platform !== 'win32') { plain(); return; }
+    try {
+        cp.execFile('taskkill', ['/PID', String(pid), '/T', '/F'],
+            { windowsHide: true }, err => { if (err) { plain(); } });
+    } catch { plain(); }
+}
+
+/** Stop one process and everything under it, by pid. Best effort, never throws:
+ *  a process that is already gone is the outcome we wanted. */
+export function killPid(pid: number): void {
+    if (!pid || pid < 1) { return; }
+    try {
+        if (process.platform === 'win32') {
+            cp.execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => { });
+        } else {
+            process.kill(pid, 'SIGTERM');
+        }
+    } catch { /* already gone is fine */ }
+}
+
+/**
+ * How many times one turn is re-attempted when the engine says the previous
+ * turn's writer is still holding the thread — and only then. Three is measured
+ * generosity: the hold has always cleared on the first retry here, and a fourth
+ * attempt would be a loop rather than a wait.
+ */
+export const RESUME_RETRIES = 3;
+/** The first backoff; it lengthens with each attempt. */
+export const RESUME_RETRY_MS = 300;
+
+/**
+ * ‼️ K-25 — HOW LONG A COOPERATIVE CANCEL IS GIVEN BEFORE THE BLUNT ONE.
+ *
+ * `session/cancel` was MEASURED to work: the running prompt settled with
+ * `stopReason: "cancelled"`, a zero usage, the conversation intact and the next
+ * turn accepted on the same `ses_…`. That is the outcome Stop should have, and
+ * it is the only one that leaves the session usable — so it is asked for first
+ * and given a real chance.
+ *
+ * The fallback is deliberately violent and deliberately last: restarting the
+ * SHARED process ends every other card's turn as well. Eight seconds is the
+ * measured cancel (well under a second here) with an order of magnitude of
+ * room, so the blunt path is reached only when the engine has genuinely stopped
+ * listening — never because a slow machine was slow.
+ */
+export const OPENCODE_CANCEL_GRACE_MS = 8000;
+
+/**
+ * The real `opencode acp` process, wrapped in the handle the runtime wants.
+ *
+ * ‼️ IT LIVES HERE AND NOT IN `opencodeacp.ts` ON PURPOSE. That file is pure over
+ * an injected spawner so the whole lifecycle — handshake, turn, cancel, crash,
+ * reload — is testable without a binary; the moment it imports `child_process`
+ * that stops being true. This is the one adaptor, and it is three lines of
+ * plumbing plus the two facts that are genuinely this engine's:
+ *
+ *   · `shell: true`, because `opencode` is an npm `.cmd` shim on Windows — and
+ *     it is SAFE here for a reason worth stating: nothing user-typed reaches the
+ *     command line, the prompt travels inside a JSON-RPC frame on stdin.
+ *   · `killTree`, because with a shell the child we hold is `cmd.exe` and a plain
+ *     kill would orphan the real process — 383 MB of it, holding every card's
+ *     conversation open.
+ */
+export function nodeOpencodeIo(
+    exe: () => string = () => 'opencode',
+    args: () => string[] = opencodeRuntimeArgs,
+    /** X-519 — the lent routes, asked at every spawn: what is added to the environment, and its print */
+    routes?: { env(): Record<string, string>; print(): string }
+): OpencodeRuntimeIo {
+    return {
+        ...(routes ? { print: () => routes.print() } : {}),
+        spawn(cwd: string): AcpChild {
+            const extra = routes?.env() ?? {};
+            const child = cp.spawn(exe(), args(), {
+                cwd: cwd || undefined, shell: true, windowsHide: true,
+                stdio: ['pipe', 'pipe', 'pipe'],
+                // No route to lend leaves the spawn exactly as it was: the window's own environment.
+                ...(Object.keys(extra).length ? { env: { ...process.env, ...extra } } : {})
+            });
+            return {
+                pid: child.pid,
+                write: (text: string) => {
+                    try { return child.stdin?.write(text) ?? false; } catch { return false; }
+                },
+                kill: () => killTree(child),
+                onStdout: fn => { child.stdout?.on('data', fn); },
+                onStderr: fn => { child.stderr?.on('data', fn); },
+                onExit: fn => {
+                    // ‼️ `close`, NOT `exit` — and both spellings of failure land
+                    // on it. A binary that is not installed never starts at all
+                    // and only emits `error`; read as anything other than "the
+                    // runtime is gone", that leaves every card waiting on a
+                    // handshake that will never come.
+                    child.on('close', code => fn(code));
+                    child.on('error', () => fn(null));
+                }
+            };
+        },
+        readTextFile: (p: string) => fs.readFileSync(p, 'utf8'),
+        writeTextFile: (p: string, content: string) => {
+            fs.mkdirSync(path.dirname(p), { recursive: true });
+            fs.writeFileSync(p, content, 'utf8');
+        }
+    };
+}
+
+export interface HostedSessionInit {
+    agentId: string;
+    agentName: string;
+    cwd: string;
+    /**
+     * Which engine this session talks to. Absent means `claude`, which is what
+     * every caller written before engines existed means — and what the whole
+     * persistent-process path below is built around (see `Hosted.engine`).
+     */
+    engine?: EngineId;
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
+    /**
+     * ‼️ X-103 — WHICH ROUTE THIS CARD RUNS ON. Absent means the agent's stored
+     * record decides, which is what every card started before a picker existed
+     * did. Named here so a launcher's choice reaches the spawn rather than being
+     * re-derived from settings behind the person who made it.
+     */
+    providerId?: string;
+    tier?: string;
+    /** ‼️ X-109 — the route above is the RESUME GATE's answer: taken as it is,
+     *  an empty providerId included, never falling through to the agent's
+     *  standing route (see resolveLaunchRoute). Kept on the state so every
+     *  re-spawn of the card stays pinned. */
+    routePinned?: boolean;
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN THIS CARD RUNS AS. Absent means the engine's
+     * active account decides and, failing that, the main one — which is what
+     * every card started before this item did, to the character. Named here so
+     * a door's choice reaches the spawn instead of being re-read from settings
+     * minutes later, behind the person who made it.
+     */
+    account?: string;
+    /**
+     * ‼️ X-102 — THE SPAWN THIS CARD IS, minted and recorded by the door that
+     * started it. Absent means no manifest was written for this card, which is
+     * a real answer and the one every card started before this item gives.
+     */
+    launchId?: string;
+    /** resume an existing claude session instead of starting a new one */
+    resume?: string;
+    /** the window's active project — recorded on the session so the stamp can be
+     *  written once the CLI reports its id (see ConsoleSessionState.projectId) */
+    projectId?: string;
+    /** ‼️ X-133 — give this session the Superpowers hook in its appended system
+     *  prompt. Absent on a RESUME means "whatever that card was started with";
+     *  absent on a fresh start means off. See ConsoleSessionState.superpowers. */
+    superpowers?: boolean;
+    /** the conversation this session already had, read off its transcript —
+     *  display only (consolehistory.ts), never sent anywhere */
+    history?: ConsoleMessage[];
+    /** and what it already SPENT, so "this session" is the session and not this
+     *  window's turn at it (see CarriedTotals) — resume only */
+    carried?: CarriedTotals;
+    /** first message, sent as soon as the process is up */
+    firstPrompt?: string;
+    /** files hung on that first message — a new session can start with a screenshot */
+    firstAttachments?: Attachment[];
+}
+
+/**
+ * One hosted card's half of the shared ACP connection.
+ *
+ * ‼️ THERE IS NO `child` HERE AND THAT IS NOT AN OMISSION. A Codex session has a
+ * process while it answers; an OpenCode session never has one of its own at all.
+ * Everything that would have been "is the process still up" is answered by
+ * `running` — whether THIS conversation has a `session/prompt` outstanding —
+ * because the process being up says nothing about this card.
+ */
+interface OpencodeCard {
+    /** the translator's own state (opencodeproto.ts) */
+    proto: OpencodeState;
+    /** what the engine said this session's config options are — model list
+     *  included, which is why nothing spawns `opencode models` */
+    options: OpencodeConfigOption[];
+    /** a `session/prompt` is outstanding for THIS conversation */
+    running?: boolean;
+    /**
+     * ‼️ A PICKER CHANGE WAITING FOR THE TURN TO END. The protocol offers no way
+     * to change the model of a turn that is already running, and applying one
+     * mid-turn is the kind of thing that either fails silently or changes the
+     * answer half way through. So it is held, said out loud, and applied at the
+     * boundary — which is a genuinely different promise from Codex's "the next
+     * turn's flags", because here it really does reach a live connection.
+     */
+    pending?: { model?: string; mode?: string };
+    /** the permission request the agent is blocked on, as the runtime named it */
+    ask?: { requestId: string; options: { optionId: string; name: string; kind: string }[] };
+    /** a cooperative cancel is in flight — see OPENCODE_CANCEL_GRACE_MS */
+    cancelTimer?: ReturnType<typeof setTimeout>;
+}
+
+interface Hosted {
+    state: ConsoleSessionState;
+    /**
+     * The process this session is talking to.
+     *
+     * ‼️ OPTIONAL, AND THAT IS THE WHOLE SHAPE OF THE SECOND ENGINE. A Claude
+     * session has one process for its lifetime. A Codex session has one per
+     * TURN — between turns there is no process at all, and the conversation
+     * lives in the CLI's own thread, resumed by id (see consoleEngine.ts). A
+     * host that assumed a process was always there would read "no child" as
+     * "dead session" and end a perfectly live conversation after its first turn.
+     */
+    child?: cp.ChildProcess;
+    /** What kind of machine this is — persistent or one process per turn. */
+    engine: EngineTransport;
+    /** The per-turn engine's translation state: its thread id, which turn it is
+     *  on, and the tool calls still open (see codexproto.ts). */
+    codex?: CodexState;
+    /**
+     * …and Antigravity's, which is a DIFFERENT state because it is a different
+     * protocol (agyproto.ts): its own conversation id, its own step counter, and
+     * the reply text it is still accumulating from deltas.
+     *
+     * ‼️ Two fields rather than one union on purpose. A session talks to exactly
+     * one engine for its whole life, so only one of them is ever set, and the
+     * translator that reads it is chosen by the same `engine` that created it —
+     * `threadOf` is the one place that asks "whichever of these exists".
+     */
+    agy?: AgyState;
+    /**
+     * …and Gemini's, which is a THIRD state for a third protocol
+     * (geminiproto.ts): its own session id, its turn counter and the reply it is
+     * still accumulating from `message` deltas.
+     *
+     * ‼️ IT DOES NOT CARRY A RUNNING TOTAL, AND THAT IS THE MEASUREMENT.
+     * `CodexState.spent` exists because Codex reports the THREAD's cumulative
+     * usage on every turn. Gemini's stats come from a per-process telemetry
+     * singleton that a resume does not restore, so they are already this turn's
+     * own — subtracting a baseline here would report zero for every turn after
+     * the first.
+     */
+    gemini?: GeminiState;
+    /**
+     * …and OpenCode's, which is a FOURTH state for a fourth protocol
+     * (opencodeproto.ts) — and the first one that is not a reader over lines
+     * this session's own process printed. There is no process of this session's:
+     * the frames arrive on a connection shared with every other OpenCode card
+     * and are routed here by `sessionId` (opencodeacp.ts).
+     *
+     * ‼️ IT CARRIES WHAT ONLY A LIVE CONNECTION CAN HOLD — the config options the
+     * engine volunteered (its own model list included), a picker change waiting
+     * for the turn boundary, and the permission request the agent is BLOCKED on.
+     * None of those has anywhere to live on a per-turn engine, which is why this
+     * is a third arm and not a third spelling of the second one.
+     */
+    opencode?: OpencodeCard;
+    /** The turn a per-turn engine is running: what was said, what rode with it,
+     *  what the engine has complained about, and how many times this exact turn
+     *  has been attempted (see the thread-store conflict in `runTurn`). */
+    turn?: {
+        prompt: string; attachments: Attachment[]; tries: number; stderr: string;
+        /** the engine printed its own end-of-turn event; the process exiting
+         *  afterwards is an ordinary ending rather than a death */
+        reported?: boolean;
+    };
+    /**
+     * ‼️ THE PROJECT BRIEF, WAITING FOR THE FIRST PROMPT — per-turn engines only.
+     *
+     * Claude Code takes the brief on the command line as an extra system prompt
+     * (`--append-system-prompt-file`) and it is invisible to the conversation.
+     * `codex` has NO such channel — measured against its own `--help`: prompt,
+     * `AGENTS.md`, config, nothing else. Left as it was, a Codex session started
+     * under a project simply never heard about it, which is worse than not
+     * offering the project box at all: the badge on the card said it was filed
+     * under something the agent had never been told.
+     *
+     * So on this engine the brief rides INSIDE the first prompt, fenced
+     * (`codexContextPrefix`), and is consumed exactly once — the thread carries
+     * it from then on, the same way the system prompt does not repeat.
+     */
+    context?: string;
+    /** X-536 — the Agent Manual's start card, said once in front of the first prompt (engines with no hook for it) */
+    card?: string;
+    buffer: string;
+    reqSeq: number;
+    /**
+     * "Now try that again" — held back until the CLI has actually AGREED to the
+     * wider permission (see setPermissionMode). It used to be said the moment
+     * the request was written, which meant the agent was told "Permission
+     * granted, please retry" for a switch the CLI had refused: it retried, was
+     * refused again, and the panel had reported success twice over.
+     */
+    retryOnGrant?: string;
+    /**
+     * ‼️ X-267 — THE CONTEXT FILE THIS SPAWN REALLY SENT, kept until the CLI
+     * says which conversation it opened.
+     *
+     * The pinned copy has to be taken from the bytes that WENT OUT, and the id
+     * to file them under only arrives in the `init` event a moment later — so
+     * the path waits here in between. Cleared once pinned: a session pins once,
+     * at its first spawn, and never again (see `pinnedContextFileName`).
+     */
+    pinFrom?: string;
+    /**
+     * The session was ENDED from a panel (see `close`). A killed process is not
+     * a silent one — whatever it already wrote is still in the pipe — and every
+     * line read after the end used to be reduced as if the session were alive.
+     * Nothing is read, written or reduced once this is set.
+     */
+    closed?: boolean;
+}
+
+export class ConsoleHost {
+    private sessions = new Map<string, Hosted>();
+    private seq = 0;
+    private listeners: ((id: string) => void)[] = [];
+    /** S-102 — a model/effort/mode somebody asked for on a live card and the engine took. */
+    private choiceListeners: ((id: string, choice: SetupChoice) => void)[] = [];
+    /** X-349 — the revive settles that are still watching for their process. */
+    private settleTimers = new Set<NodeJS.Timeout>();
+
+    constructor(
+        /** how to run the CLI — 'claude' unless the user overrode it */
+        private exe: () => string = () => 'claude',
+        /**
+         * The pid the CLI itself registered for a session, if the caller can
+         * look it up (`~/.claude/sessions/<pid>.json`).
+         *
+         * The child we hold is the `shell: true` wrapper, and a tree kill
+         * through it is one assumption deep: it works only as long as the real
+         * `claude` is still a descendant of that shell. The CLI's own registry
+         * names the process directly, so ending a session can stop the thing
+         * it is actually about instead of the thing that started it.
+         */
+        private ownerPid: (sessionId: string) => number | undefined = () => undefined,
+        /**
+         * The window's active project, read at spawn time.
+         *
+         * It is asked for HERE rather than passed by each caller on purpose:
+         * there are six places that start a session, and a stamp that depends
+         * on all six remembering to attach it is a stamp that will silently
+         * stop being applied the first time a seventh appears.
+         */
+        private activeProjectId: () => string | undefined = () => undefined,
+        /**
+         * Write the project's context file and return its path.
+         *
+         * Called on EVERY spawn, first start and resume alike — the appended
+         * system prompt does not survive `--resume` (measured).
+         *
+         * ‼️ X-267 — …BUT A RESUME SAYS WHICH CONVERSATION IT IS CONTINUING, and
+         * is answered with that conversation's PINNED copy instead of today's
+         * text. A regenerated brief is a CHANGED system prompt, and a changed
+         * system prompt throws away the prefix cache holding the whole thread:
+         * measured at 303,987 tokens re-billed for a 29-second restart. The
+         * caller owns the pin; see `core/projectContext.ts`.
+         */
+        private projectContextFile: (
+            projectId: string | undefined, superpowers?: boolean,
+            /** the CLI session id this spawn resumes, when it is one */
+            resume?: string
+        ) => string | undefined = () => undefined,
+        /**
+         * ‼️ X-43 — WHAT THE WINDOW IS HOLDING, ON AN ENGINE THAT DOES NOT SAY.
+         *
+         * Codex puts one usage block on the wire per turn and it is the thread's
+         * running total: there is nothing there a window can be read out of, and
+         * reading one out of it anyway is how a card came to show `ctx 5.4M`
+         * against a capacity of 258 400. The figure exists — the CLI writes it to
+         * its own rollout at every turn boundary — so it is READ rather than
+         * derived (core/codexctx.ts). Injected because the host has no `fs`, and
+         * absent in a test, which is the same thing as an engine that publishes
+         * nothing: ctx stays unknown and no total takes its place.
+         */
+        private codexContext: (threadId: string, force?: boolean) => {
+            tokens: number; window?: number; source: string; measuredAt: number;
+        } | undefined = () => undefined,
+        /**
+         * ‼️ K-25 — HOW THE ONE SHARED `opencode acp` PROCESS IS STARTED.
+         *
+         * Injected rather than built here for the reason every other io on this
+         * class is: the host must stay testable without a binary, and the whole
+         * point of this engine's shape is a lifecycle (handshake, turn, cancel,
+         * crash, reload) that only a test can exercise cheaply. Absent means this
+         * build cannot run OpenCode, and a card that asks for it is told so in
+         * one sentence rather than sitting at `starting` for ever.
+         *
+         * There is exactly ONE runtime per host, created on the first OpenCode
+         * card and stopped when the last one goes — the 383 MB measurement is the
+         * whole argument, and a factory called twice would quietly undo it.
+         */
+        private opencodeIo?: OpencodeRuntimeIo,
+        /**
+         * X-101 — the provider runtime this card's launch resolved to, asked of
+         * the shared registry by whoever owns the profiles and the keychain.
+         *
+         * ‼️ THIS HOST SPAWNED WITH NO `env` AT ALL, which means it inherited
+         * whatever the VS Code window was carrying. On four engines that is
+         * correct and on Claude it is a second answer to the question a route
+         * profile was chosen to answer — the same defect the runner had, on the
+         * surface people actually watch.
+         *
+         * Absent, or returning `undefined`, leaves the environment exactly as it
+         * has always been.
+         */
+        private engineRuntime?: (
+            agentId: string, engine: string,
+            /** X-103 — the route this CARD was started on; absent asks the
+             *  agent's stored record, which is what every caller written before
+             *  a picker existed meant. */
+            route?: { providerId?: string; tier?: string; pinned?: boolean; model?: string }
+        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string }; refusal?: string } | undefined,
+        /**
+         * ‼️ X-169 — THE ACCOUNT'S ENVIRONMENT, resolved by the side that owns
+         * the slot list and the "use this next" map, for the same reason
+         * `engineRuntime` is: a core module that read `agentFarm.accounts`
+         * itself would be a second resolver, and the variable's NAME belongs to
+         * the engine's own adapter rather than to this file.
+         *
+         * Absent, or an empty map, leaves the environment exactly as it has
+         * always been — which IS the main sign-in.
+         */
+        private accountLayer?: (
+            engine: string, account?: string
+            // ‼️ X-211 — `null` on a name REMOVES it (see spawnEnvironment):
+            // "the machine's own sign-in", stated outright, is the absence of
+            // the engine's config variable and not merely the absence of a
+            // layer, because the window this runs in may carry one already.
+        ) => Record<string, string | null> | undefined,
+        /**
+         * ‼️ X-267 — TAKE THE PINNED COPY of what this spawn's command line
+         * really carried, now that the conversation has an id.
+         *
+         * The host cannot do it itself: the pinned copy lives beside the context
+         * file, and where that folder is belongs to the side that writes it. All
+         * this end knows is "these bytes opened that conversation" — which is
+         * exactly the fact the pin needs and the only one the host has.
+         */
+        private pinProjectContext: (
+            sessionId: string, file: string
+        ) => void = () => {},
+        /**
+         * ‼️ X-305 R2 — TURN A RULE (`@round-robin`, `@emptiest`, `@Night`) INTO
+         * ONE SLOT, against the figures of this moment, and COMMIT it (the
+         * round-robin cursor moves). Called only where a choice becomes real:
+         * a card is started on it, or a live card is moved to it. The card then
+         * keeps the SLOT, never the rule — a rule left on the state was
+         * re-resolved at every re-spawn and walked the conversation between
+         * plans. Absent = rules are refused here rather than guessed at.
+         */
+        private accountPick?: (
+            engine: string, stated: string, agentId?: string, model?: string
+        ) => { id: string; note: string; refusal?: string },
+        /**
+         * K-43 — the auto-answer settings as they are now. Absent = OFF: a host
+         * nobody configured (every test) must never answer a question on its own.
+         */
+        private autoAnswerConfig?: () => AutoAnswerSettings,
+        /** X-506 — the X-109 gate, asked here for every resume that named no route. */
+        private resumeRoute?: ResumeRouteAsk
+    ) {}
+
+    /** K-43 — the countdown on a parked question, one timer per card. */
+    private autoAnswers = new AutoAnswerTimers({
+        settings: () => this.autoAnswerConfig?.() ?? autoAnswerSettings({ enabled: false }),
+        askOf: id => this.sessions.get(id)?.state.pendingAsk,
+        expire: (id, answer, settings, typed) => this.answerOnTimeout(id, answer, settings, typed)
+    });
+
+    /**
+     * The clock ran out on a question: answer it through the SAME path a click
+     * takes, then make the row say it was chosen FOR the user, not by them.
+     */
+    private answerOnTimeout(id: string, answer: TimeoutAnswer, settings: AutoAnswerSettings, typed: string): void {
+        const h = this.sessions.get(id);
+        if (!h?.state.pendingAsk) { return; }
+        const before = h.state.messages.length;
+        const response = ownResponse(settings.timeoutSeconds, answer, typed);
+        if (!this.answer(id, { kind: 'answer', answers: answer.answers, response })) { return; }
+        const msgs = h.state.messages;
+        const row = msgs[msgs.length - 1];
+        if (msgs.length > before && row?.role === 'ask' && row.answer !== undefined) {
+            h.state = { ...h.state, messages: [...msgs.slice(0, -1), { ...row, answer: ownNote(answer) }] };
+            this.fire(id);
+        }
+    }
+
+    /** K-43 — stop the countdown on this card's question; it waits for a person now. */
+    holdAutoAnswer(id: string): boolean {
+        const done = this.autoAnswers.hold(id);
+        if (done) { this.fire(id); }
+        return done;
+    }
+
+    /** K-45 — the person picked or typed on the card: kept for the timer, the clock runs on. */
+    noteAskPicks(id: string, requestId: string, picks: unknown, response: string): void {
+        if (this.autoAnswers.note(id, requestId, picks, response)) { this.fire(id); }
+    }
+
+    /** K-43 — what the card and the bridge show under the pending ask. */
+    autoAnswerView(id: string): AutoAnswerView | null {
+        return this.autoAnswers.view(id);
+    }
+
+    /** K-43 — the settings changed: re-arm every pending question against them. */
+    resyncAutoAnswers(): void {
+        for (const id of this.sessions.keys()) { this.autoAnswers.sync(id, true); }
+        for (const id of this.sessions.keys()) { this.fire(id); }
+    }
+
+    /**
+     * ‼️ X-305 R2 — THE SLOT A STATED ACCOUNT RUNS ON, for a door about to
+     * start a card: a slot id or `@machine` passes through untouched, a rule is
+     * resolved (and committed) through `accountPick`. `refusal` set = start
+     * nothing and show it — `id` is then '' and must not be spawned on.
+     */
+    pickAccount(
+        engine: string, stated: string | undefined, agentId?: string, model?: string
+    ): { id: string; note: string; refusal?: string } {
+        const want = String(stated ?? '').trim();
+        if (!isPolicyId(want)) { return { id: want, note: '' }; }
+        if (!this.accountPick) {
+            return { id: '', note: '', refusal: `${want} is a rule, and this window was given no way to resolve one.` };
+        }
+        const r = this.accountPick(engine, want, agentId, model);
+        if (r.refusal) { return { id: '', note: '', refusal: r.refusal }; }
+        // '' from a rule is "the main sign-in" (only @standing says it) — stated
+        // outright, so the card cannot fall through to "use this next" later.
+        return { id: r.id || MACHINE_ACCOUNT_ID, note: r.note };
+    }
+
+    /** The shared OpenCode runtime, made on demand. `undefined` when this build
+     *  was given no way to spawn one (see the constructor). */
+    private opencodeRt?: OpencodeRuntime;
+
+    private runtime(): OpencodeRuntime | undefined {
+        if (!this.opencodeIo) { return undefined; }
+        if (!this.opencodeRt) { this.opencodeRt = new OpencodeRuntime(this.opencodeIo); }
+        return this.opencodeRt;
+    }
+
+    /** What the one shared process is doing, for a surface that wants to say —
+     *  and for the acceptance run, which has to prove two cards share one pid. */
+    opencodeRuntimeState(): {
+        phase: string; pid?: number; cards: number; reloading: boolean; refreshDue: boolean; refreshDueSince?: number
+    } | undefined {
+        const rt = this.opencodeRt;
+        if (!rt) { return undefined; }
+        const since = rt.refreshDueSince;
+        return {
+            phase: rt.state, pid: rt.pid, cards: rt.cardCount, reloading: rt.reloading,
+            refreshDue: since > 0, ...(since ? { refreshDueSince: since } : {})
+        };
+    }
+
+    /** X-519 — the lent routes changed: the shared process restarts with them once every card is idle (OpencodeRuntime.refresh). */
+    refreshOpencodeRoutes(): string {
+        return this.opencodeRt?.refresh() ?? 'none';
+    }
+
+    /**
+     * Apply Codex's on-disk context reading to a hosted session, as a canonical
+     * `context` event (consoleproto.ts).
+     *
+     * Returns whether anything changed — the reducer answers that, by comparing
+     * the reading with the one already on the state, so an unchanged file costs
+     * a Map lookup and repaints nothing.
+     */
+    private pollCodexContext(h: Hosted, force = false): boolean {
+        if (h.engine.id !== 'codex' || h.closed) { return false; }
+        const thread = threadOf(h) ?? h.state.sessionId;
+        if (!thread) { return false; }
+        const r = this.codexContext(thread, force);
+        if (!r) { return false; }
+        const rr = reduceEvent(h.state, {
+            type: 'context', tokens: r.tokens, window: r.window,
+            source: r.source, measuredAt: r.measuredAt
+        }, Date.now());
+        h.state = rr.state;
+        return rr.changed;
+    }
+
+    /** S-82 — this card asked to open a baton relay; the extension seals it as leg 1 once its session id is known. */
+    wantRelay(id: string, want: { account?: string; maxLegs?: number }): void {
+        this.mutate(id, s => ({
+            ...s,
+            relayWanted: {
+                ...(want.account ? { account: want.account } : {}),
+                ...(want.maxLegs !== undefined ? { maxLegs: want.maxLegs } : {})
+            }
+        }));
+    }
+
+    onChange(fn: (id: string) => void): { dispose(): void } {
+        this.listeners.push(fn);
+        return { dispose: () => { this.listeners = this.listeners.filter(f => f !== fn); } };
+    }
+
+    private fire(id: string): void {
+        this.autoAnswers.sync(id);
+        for (const fn of this.listeners) { fn(id); }
+    }
+
+    onChosen(fn: (id: string, choice: SetupChoice) => void): { dispose(): void } {
+        this.choiceListeners.push(fn);
+        return { dispose: () => { this.choiceListeners = this.choiceListeners.filter(f => f !== fn); } };
+    }
+
+    private chose(id: string, choice: SetupChoice | null): void {
+        if (!choice) { return; }
+        for (const fn of this.choiceListeners) {
+            try { fn(id, choice); } catch { /* a memory write never breaks a card */ }
+        }
+    }
+
+    list(): ConsoleSessionState[] {
+        return [...this.sessions.values()].map(h => h.state).sort((a, b) => b.lastTs - a.lastTs);
+    }
+
+    get(id: string): ConsoleSessionState | undefined {
+        return this.sessions.get(id)?.state;
+    }
+
+    /**
+     * ‼️ S-29 — ONE CARD PER SESSION, ON EVERY ENGINE.
+     *
+     * An ended session keeps its card in the left panel until you say "Remove
+     * from list", and it keeps it for two reasons: so the conversation can still
+     * be read, and so it is under your hand when you want it back. Resuming it
+     * therefore has to come back to THAT card. It did not: every route built a
+     * fresh one, so the panel held two cards with the same session id — one live
+     * and one grey — and doing it again would have made three.
+     *
+     * The seat is the hosted id, and it is reused rather than replaced: the
+     * panel's selection, the right-click menu's `hostId` and anything else
+     * holding that id keep pointing at the session they were pointing at.
+     *
+     * A LIVE card for the same id is a different answer: there is nothing to
+     * revive, and spawning would put a second process on one transcript. The
+     * caller is handed the card that already exists. (One route guarded that by
+     * hand; six did not, which is the shape of bug this class exists to stop.)
+     */
+    private seatFor(sessionId: string): { id: string; live: boolean } | undefined {
+        for (const [id, h] of this.sessions) {
+            if (h.state.sessionId !== sessionId) { continue; }
+            const dead = h.state.status === 'ended' || h.state.status === 'error';
+            return { id, live: !dead };
+        }
+        return undefined;
+    }
+
+    /**
+     * ‼️ S-30 — WHAT IS ALREADY ON THE CARD IS NEVER TRADED FOR WHAT DISK SAYS.
+     *
+     * A resume rebuilds the scrollback from the transcript, and that read has
+     * several honest ways to come back short: the index may not know the id yet,
+     * the file may be unreadable, the parse may hold a fraction of what the card
+     * watched happen live. The seat's own messages were the ground truth for
+     * everything the reader had just seen — dropping them and taking whatever
+     * the file gave back is how "End session, then Resume" printed an empty
+     * conversation for a session whose transcript was complete.
+     *
+     * So the richer of the two wins. They are never merged: the same turn read
+     * twice from two sources is a duplicated conversation, which is the failure
+     * this rule exists to avoid on the other side.
+     */
+    private resumeMessages(
+        prior: ConsoleMessage[], history: ConsoleMessage[] | undefined
+    ): ConsoleMessage[] | undefined {
+        const read = history ?? [];
+        if (read.length >= prior.length) { return read.length ? read : undefined; }
+        return prior.length ? prior : undefined;
+    }
+
+    /**
+     * ‼️ THE SCROLLBACK A REVIVE COULD NOT REBUILD AT ACTIVATION TIME.
+     *
+     * The rule and the measurement are in `consoleRevive.ts`; this is the seat
+     * side of it. Nothing is restarted and nothing is dropped: the placeholder
+     * row is replaced WHERE IT STANDS, so the revive notice under it — and
+     * anything the reader has already typed into the card since — keeps both
+     * its place and its order.
+     */
+    rebuildHistory(id: string, rows: ConsoleMessage[] | undefined): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        const next = swapPlaceholder(h.state.messages, rows);
+        if (!next) { return false; }
+        this.mutate(id, s => ({ ...s, messages: next }));
+        return true;
+    }
+
+    /**
+     * ‼️ THE SCROLLBACK RETRY'S TWIN — THE FIGURES A REVIVE COULD NOT READ, AND THE
+     * HALF THAT WAS LEFT COUNTING FROM ZERO.
+     *
+     * `carried` is read off the index row, and inside `activate()` the index
+     * answers `undefined` for every id — the same measured fact that made the
+     * scrollback come back as a placeholder. The scrollback was retried; the
+     * totals were not. So a revived card showed an hour-old conversation above
+     * a line reading "$0.0000 · 0 tokens · 0 turns this session": the composer
+     * described this window's turn at the session instead of the session, which
+     * is the exact reading `CarriedTotals` exists to prevent.
+     *
+     * The baseline is ADDED, never assigned. A seat that was mid-turn is nudged
+     * to carry on the moment it comes back, so by the time the index catches up
+     * the card may already have spent something of its own, and assigning would
+     * throw that away. Context is the other way round: a live reading is newer
+     * than the transcript's last one, so it is only filled in where the card
+     * has none.
+     */
+    applyCarried(id: string, c: CarriedTotals | undefined): boolean {
+        const h = this.sessions.get(id);
+        if (!h || !c) { return false; }
+        // Codex reports the THREAD's running total, so its per-turn arithmetic
+        // needs the same baseline (see codexTurnUsage). A thread that has
+        // already completed a turn in this seat has one of its own — touching
+        // that would charge the next turn with the whole conversation, which is
+        // the failure the baseline exists to prevent.
+        if (h.codex && !h.codex.spent) {
+            const spent = codexTotalsFromUsage(c.usage);
+            if (spent) { h.codex.spent = spent; }
+        }
+        this.mutate(id, s => ({
+            ...s,
+            costUSD: s.costUSD + (c.costUSD ?? 0),
+            tokens: s.tokens + (c.tokens ?? 0),
+            wTokens: s.wTokens + (c.wTokens ?? 0),
+            turns: s.turns + (c.turns ?? 0),
+            ...(!s.contextTokens && c.contextTokens
+                ? {
+                    contextTokens: c.contextTokens,
+                    contextSource: 'transcript-last-call' as const,
+                    contextStale: true
+                }
+                : {}),
+            ...(!s.contextWindowTokens && c.contextWindowTokens
+                ? { contextWindowTokens: c.contextWindowTokens }
+                : {})
+        }));
+        return true;
+    }
+
+    /**
+     * ‼️ K-22 — what this session's permission control ACTUALLY means, read off
+     * Claude's own settings layers rather than assumed from the picker.
+     *
+     * The layers and their precedence belong to `permissionmode.ts`; this only
+     * hands it the files. A layer that is absent, unreadable or not valid JSON
+     * is simply an absent layer — a broken project settings file must not stop
+     * somebody starting a session.
+     */
+    private resolvePermission(requested: string, cwd: string): EffectivePermission {
+        const home = os.homedir();
+        const layers = permissionLayerPaths(cwd || '', home).map(l => {
+            try { return { ...l, text: fs.readFileSync(l.file, 'utf8') }; } catch { return l; }
+        });
+        return resolveEffectivePermission(requested, layers);
+    }
+
+    /**
+     * ‼️ K-22 — BYPASS WAS ASKED FOR AND CANNOT BE ENFORCED, SO NOTHING STARTS.
+     *
+     * The tempting alternative is to start the session in the ordinary asking
+     * mode and let the user find out when a window opens. That is precisely the
+     * state the user's decision forbids: a card that says bypass and a process
+     * that asks. The session appears, in error, saying which policy refused it
+     * and where that policy lives — a thing they can act on.
+     */
+    private refusePermissionMismatch(
+        id: string, init: HostedSessionInit, projectId: string | undefined,
+        prior: ConsoleMessage[], permission: EffectivePermission
+    ): string {
+        const blocked = permission.blocked;
+        const text = `This session was not started. It asked for ${BYPASS}`
+            + `${permission.requested ? '' : ' (Default resolves to it through ' + permission.settingsFile + ')'}`
+            + `, and that cannot be enforced here: ${blocked?.why} — ${blocked?.file}.`
+            + ' Agent Farm will not run a session labelled bypass that would then stop and ask you for'
+            + ' permission. Change that policy, or start this session in a mode you actually want.';
+        return this.refuseStart(id, init, projectId, prior, text, 'bypass was requested and could not be enforced',
+            { enforcedPermissionMode: '', permissionWhy: permission.why });
+    }
+
+    /** A card that says, in error, why it was not started — nothing is spawned. */
+    private refuseStart(
+        id: string, init: HostedSessionInit, projectId: string | undefined,
+        prior: ConsoleMessage[], text: string, exitReason: string, extra: Partial<ConsoleSessionState> = {}
+    ): string {
+        const now = Date.now();
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier, account: init.account,
+            launchId: init.launchId,
+            now, sessionId: init.resume, projectId, resumed: !!init.resume,
+            carried: init.resume ? init.carried : undefined
+        });
+        this.sessions.set(id, {
+            state: {
+                ...base,
+                messages: [...prior, { id: `perm-${now.toString(36)}`, ts: now, role: 'error', text }],
+                status: 'error', exitReason, ...extra
+            },
+            engine: engineOf(init.engine), buffer: '', reqSeq: 0
+        });
+        this.fire(id);
+        return id;
+    }
+
+    /** Start a hosted session. Returns our id; the CLI's own id arrives later. */
+    start(init: HostedSessionInit): string {
+        const seat = init.resume ? this.seatFor(init.resume) : undefined;
+        if (seat?.live) { return seat.id; }
+        const id = seat ? seat.id : `cs${++this.seq}-${Date.now().toString(36)}`;
+        // …and what that card was SHOWING outlives the record of its process.
+        const prior = seat ? this.sessions.get(seat.id)?.state.messages ?? [] : [];
+        /**
+         * ‼️ X-133 — …AND SO DOES THE DISCIPLINE IT WAS RUNNING TO.
+         *
+         * The appended system prompt does not survive `--resume` (measured), so
+         * a card taking its own seat again has to be handed the hook a second
+         * time — and the caller that does the picking up is a list of
+         * transcripts, which knows nothing about how the session was started.
+         * The seat does. Read HERE, a line before the old record is dropped,
+         * because after that there is nothing left to ask.
+         */
+        const seatSuperpowers = seat ? !!this.sessions.get(seat.id)?.state.superpowers : false;
+        // The grey card's process is long gone; what is dropped here is the
+        // record of it, a line before the new one takes the same seat.
+        if (seat) { this.sessions.delete(seat.id); }
+        const projectId = init.projectId ?? this.activeProjectId();
+        // ‼️ X-506 — the route a resume runs on is its own conversation's, on every door.
+        const gated = gateResumeRoute(init, this.resumeRoute);
+        if (gated.refuse) { return this.refuseStart(id, init, projectId, prior, gated.refuse, 'the route it ran on cannot be resumed'); }
+        init = gated.init;
+        // An explicit answer from the caller always wins — including `false`, or
+        // switching the discipline OFF on a resume would be impossible.
+        const superpowers = init.superpowers ?? seatSuperpowers;
+        const engine = engineOf(init.engine);
+        if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId, superpowers, prior); }
+        if (engine.shape === 'sharedAcp') { return this.startShared(id, engine, init, projectId, superpowers, prior); }
+        /**
+         * ‼️ K-22 — WHAT THIS SESSION WILL REALLY BE IN, decided before it runs.
+         *
+         * The launcher's choice is a request; Claude's own settings can turn
+         * `Default` into bypass; a managed policy can forbid bypass outright.
+         * Resolving all three here means the flags, the card and the reducer's
+         * auto-answer all follow ONE answer instead of three guesses.
+         */
+        const permission = this.resolvePermission(init.permissionMode ?? '', init.cwd);
+        if (permission.blocked) {
+            // A session that would wear a label it cannot honour is not started.
+            // Downgrading it to "asks" silently is the exact state the user
+            // rejected: bypass on the card, a permission window on the screen.
+            return this.refusePermissionMismatch(id, init, projectId, prior, permission);
+        }
+        // ‼️ X-267 — a resume asks for its OWN conversation's context, pinned.
+        const ctxFile = this.projectContextFile(projectId, superpowers, init.resume);
+        const routeRt = this.engineRuntime?.(init.agentId, engine.id, {
+            providerId: init.providerId, tier: init.tier, pinned: init.routePinned, model: init.model
+        });
+        // X-525 — a route that cannot be run on is refused, never left to the shell's environment.
+        if (routeRt?.refusal) { return this.refuseStart(id, init, projectId, prior, routeRt.refusal, 'the route it lands on cannot be run on'); }
+        // X-495 — the model asked of a third-party route by its alias (routedModel)
+        const args = hostArgs({ ...init, model: routedModel(init.model, routeRt), permission, projectContextFile: ctxFile });
+        // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
+        // reaches the command line: prompts travel on stdin as JSON, and the
+        // flag values come from fixed vocabularies (launch.ts).
+        const child = cp.spawn(this.exe(), args, {
+            cwd: init.cwd, shell: true, windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            /**
+             * ‼️ X-105 — AND THE SAME ENVIRONMENT THE OTHER THREE SURFACES GET.
+             *
+             * This spawn passed no `env` at all, so the process inherited
+             * whatever the VS Code window carried — on the engine the Console
+             * exists for, and after X-101 had already given the per-turn
+             * engines one and X-104 the OS window. The card kept its
+             * `providerId`, wrote it into the launch manifest and reported it on
+             * every surface, while the process talked to whichever route the
+             * window happened to hold: every surface agreeing, all of them
+             * wrong about the only thing that matters.
+             *
+             * ‼️ AND THE UNROUTED CARD IS THE HALF THAT IS EASY TO MISS. "No
+             * route" is not "no statement": the official endpoint is reached by
+             * CLEARING what was inherited, which is what `clearEnv` is for and
+             * which nothing here could say while nothing here was said.
+             *
+             * THIS CARD'S OWN ROUTE, off the init that is about to become the
+             * state — not the agent's standing one. A card started on Kimi keeps
+             * Kimi even after the setting changes under it, for the reason
+             * X-101 gives: a route change is a different program.
+             */
+            env: spawnEnvironment(
+                // ‼️ X-169 — the account as a LAYER, which is what this argument
+                // has always been for. A second injection path would have to
+                // re-solve the clearing order below, and one of the two would
+                // eventually be wrong.
+                process.env, [this.accountLayer?.(engine.id, init.account)], routeRt)
+        });
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier, routePinned: init.routePinned, launchId: init.launchId,
+            // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
+            // starts a card. Only the ACP one recorded it, so on Claude — the
+            // engine this whole family exists for — the card ran as an account
+            // nothing wrote down: the badge had nothing to draw, the live strip
+            // nothing to print, and every re-spawn read `h.state.account`, found
+            // undefined and quietly put a long conversation back on the main
+            // sign-in. That is the ghost selection, one layer under the picker.
+            account: init.account,
+            now: Date.now(),
+            // a resumed session already HAS an id — see newSessionState
+            sessionId: init.resume,
+            projectId, superpowers,
+            resumed: !!init.resume,
+            // …and a past: what it spent before this window picked it up
+            carried: init.resume ? init.carried : undefined
+        });
+        // K-22 — the enforced mode is a FACT about the flags just built, kept
+        // beside the request rather than instead of it.
+        base.enforcedPermissionMode = permission.effective;
+        base.permissionWhy = permission.why;
+        // The earlier conversation goes in as messages, nothing more: it is
+        // never written to stdin, so it costs nothing and the model's own
+        // context comes from --resume, not from here.
+        const carriedMessages = this.resumeMessages(prior, init.history);
+        const hosted: Hosted = {
+            state: carriedMessages ? { ...base, messages: carriedMessages } : base,
+            child, engine, buffer: '', reqSeq: 0,
+            // ‼️ X-267 — only a FRESH spawn has a pin to take. A resume was
+            // already handed the pinned copy (or wrote one itself), so there is
+            // nothing here to file and nothing that may overwrite it.
+            ...(init.resume || !ctxFile ? {} : { pinFrom: ctxFile })
+        };
+        this.sessions.set(id, hosted);
+
+        this.readStdout(id, child);
+        child.stderr?.on('data', d => {
+            const text = String(d).trim();
+            // The CLI writes progress noise to stderr too; only keep what looks
+            // like a real failure, so the conversation is not a log dump.
+            if (!text || !/error|fatal|not found|denied/i.test(text)) { return; }
+            // …and a session you ended says nothing more, not even a complaint
+            // about being killed (see close).
+            if (this.sessions.get(id)?.closed) { return; }
+            this.mutate(id, s => ({
+                ...s, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `err-${Date.now().toString(36)}`, ts: Date.now(),
+                    role: 'error', text: text.slice(0, 400)
+                }]
+            }));
+        });
+        child.on('error', e => {
+            // A pipe that breaks because WE killed the process is not a session
+            // that failed — it ended, and it already says so.
+            if (this.sessions.get(id)?.closed) { return; }
+            this.mutate(id, s => ({
+                ...s, status: 'error', exitReason: String((e as Error).message ?? e),
+                lastTs: Date.now()
+            }));
+        });
+        child.on('close', code => {
+            this.mutate(id, s => ({
+                ...s,
+                status: s.status === 'error' ? 'error' : 'ended',
+                exitReason: s.exitReason ?? (code === 0 ? 'session closed' : `claude exited with code ${code}`),
+                lastTs: Date.now()
+            }));
+        });
+
+        // Ask the CLI what it is actually going to think with, before a word is
+        // said. Nothing else can answer it: the flags above are only what was
+        // ASKED for, and the usual case is that nothing was (see askSettings).
+        this.askSettings(id);
+        const firstFiles = init.firstAttachments ?? [];
+        if (init.firstPrompt?.trim() || firstFiles.length) {
+            this.send(id, init.firstPrompt ?? '', false, firstFiles);
+        }
+        return id;
+    }
+
+    /**
+     * ‼️ A SESSION THAT HAS NO PROCESS YET, AND IS NOT BROKEN.
+     *
+     * On a per-turn engine there is nothing to spawn until there is something
+     * to say: `codex exec` takes a prompt, runs it and exits. So the session is
+     * created **idle** with no child, and the first turn is started by the first
+     * message — which is also how every later turn starts. There is no "starting"
+     * state to sit in, because nothing is starting.
+     *
+     * Everything else about the session is identical to a persistent one: the
+     * same state object, the same queue, the same panel, the same transcript
+     * shape. That is the point of the adaptor (codexproto.ts) — one Console, two
+     * machines underneath it.
+     */
+    private startPerTurn(
+        id: string, engine: EngineTransport, init: HostedSessionInit, projectId: string | undefined,
+        superpowers: boolean, prior: ConsoleMessage[] = []
+    ): string {
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier, routePinned: init.routePinned, launchId: init.launchId,
+            // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
+            // starts a card. Only the ACP one recorded it, so on Claude — the
+            // engine this whole family exists for — the card ran as an account
+            // nothing wrote down: the badge had nothing to draw, the live strip
+            // nothing to print, and every re-spawn read `h.state.account`, found
+            // undefined and quietly put a long conversation back on the main
+            // sign-in. That is the ghost selection, one layer under the picker.
+            account: init.account,
+            now: Date.now(),
+            sessionId: init.resume,
+            projectId, superpowers,
+            resumed: !!init.resume,
+            carried: init.resume ? init.carried : undefined
+        });
+        // ‼️ S-30 — and the same rule here, which is the side the report came
+        // from: the per-turn engines are the ones with no process between turns,
+        // so this is the path "End session → Resume" takes on Codex.
+        const carriedMessages = this.resumeMessages(prior, init.history);
+        const hosted: Hosted = {
+            state: {
+                ...(carriedMessages ? { ...base, messages: carriedMessages } : base),
+                // Nothing is starting and nothing is running: it is ready.
+                status: 'idle',
+                engine: engine.id
+            },
+            engine,
+            // A resume already knows the thread; a fresh session learns it from
+            // the first `thread.started` (Codex) / `init` (Antigravity, Gemini)
+            // — except on Gemini, where the id is CHOSEN before the first turn
+            // (see `newThread` in runTurn) and `init` only confirms it.
+            ...(engine.id === 'agy'
+                ? { agy: { ...newAgyState(), ...(init.resume ? { conversationId: init.resume } : {}) } }
+                : engine.id === 'gemini'
+                    ? {
+                        gemini: {
+                            ...newGeminiState(),
+                            ...(init.resume ? { sessionId: init.resume } : {})
+                        }
+                    }
+                    : {
+                        codex: {
+                            ...newCodexState(),
+                            ...(init.resume ? { threadId: init.resume } : {}),
+                            // ‼️ …AND WHAT THE THREAD HAS ALREADY SPENT, or the
+                            // first turn after a resume is charged with the whole
+                            // conversation — see codexTurnUsage /
+                            // codexTotalsFromUsage. This baseline is CODEX-ONLY:
+                            // it exists because that engine reports the thread's
+                            // running total, and applying it to an engine that
+                            // reports per-turn figures would zero every turn.
+                            ...(init.resume
+                                ? (() => {
+                                    const spent = codexTotalsFromUsage(init.carried?.usage);
+                                    return spent ? { spent } : {};
+                                })()
+                                : {})
+                        }
+                    }),
+            // ‼️ Read HERE, at spawn, exactly like the Claude path writes the
+            // file here — and only for a session that is starting. A resume is
+            // continuing a thread that was already told, and telling it again
+            // would put the brief in the middle of a conversation as if the user
+            // had typed it.
+            context: init.resume ? undefined : this.readProjectContext(projectId, superpowers),
+            card: init.resume ? undefined : this.startCardFor(engine.id) || undefined,
+            buffer: '', reqSeq: 0
+        };
+        this.sessions.set(id, hosted);
+        const firstFiles = init.firstAttachments ?? [];
+        if (init.firstPrompt?.trim() || firstFiles.length) {
+            this.send(id, init.firstPrompt ?? '', false, firstFiles);
+        }
+        return id;
+    }
+
+    // -----------------------------------------------------------------------
+    // K-25 — the shared-ACP arm
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ A SESSION THAT HAS NO PROCESS *AT ALL*, EVER — and is not broken either.
+     *
+     * The per-turn arm above has no process BETWEEN turns. This one never has one
+     * of its own: the conversation lives on a connection shared with every other
+     * OpenCode card, and what this card owns is a `ses_…` inside it. So the work
+     * of starting is not a spawn, it is a handshake plus `session/new` (or
+     * `session/load` on a resume) — genuinely asynchronous, genuinely able to
+     * fail with something worth reading, and therefore the one engine here whose
+     * `starting` status means something.
+     *
+     * Everything downstream is identical to the other two: the same state object,
+     * the same queue, the same panel, the same transcript shape.
+     */
+    private startShared(
+        id: string, engine: EngineTransport, init: HostedSessionInit,
+        projectId: string | undefined, superpowers: boolean, prior: ConsoleMessage[] = []
+    ): string {
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier, routePinned: init.routePinned, launchId: init.launchId,
+            // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
+            // starts a card. Only the ACP one recorded it, so on Claude — the
+            // engine this whole family exists for — the card ran as an account
+            // nothing wrote down: the badge had nothing to draw, the live strip
+            // nothing to print, and every re-spawn read `h.state.account`, found
+            // undefined and quietly put a long conversation back on the main
+            // sign-in. That is the ghost selection, one layer under the picker.
+            account: init.account,
+            now: Date.now(),
+            sessionId: init.resume,
+            projectId, superpowers,
+            resumed: !!init.resume,
+            carried: init.resume ? init.carried : undefined
+        });
+        // ‼️ THE MODE IS RECORDED AS *ENFORCED* HERE, and that is what makes
+        // K-22's bypass rule work on this engine. Over ACP there is no `--auto`
+        // flag to hand the process — the engine asks, every time, on a channel
+        // that is genuinely open. So "bypass" means Agent Farm answers those
+        // questions itself, which is exactly what the reducer already does when
+        // it sees this field, catastrophic-shape refusal included.
+        base.enforcedPermissionMode = init.permissionMode ?? '';
+        base.permissionWhy = this.opencodePermissionWhy(init.permissionMode);
+        const carriedMessages = this.resumeMessages(prior, init.history);
+        const hosted: Hosted = {
+            state: {
+                ...(carriedMessages ? { ...base, messages: carriedMessages } : base),
+                status: 'starting',
+                engine: engine.id
+            },
+            engine,
+            opencode: {
+                proto: {
+                    ...newOpencodeState(),
+                    ...(init.resume ? { sessionId: init.resume } : {})
+                },
+                options: []
+            },
+            // The brief has nowhere else to go: this engine has no system-prompt
+            // flag either (`OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG`), so it rides
+            // inside the first prompt exactly as it does on Codex — and only for
+            // a session that is starting, because a resume is continuing a
+            // conversation that was already told.
+            context: init.resume ? undefined : this.readProjectContext(projectId, superpowers),
+            card: init.resume ? undefined : this.startCardFor(engine.id) || undefined,
+            buffer: '', reqSeq: 0
+        };
+        this.sessions.set(id, hosted);
+        this.fire(id);
+        void this.openShared(id, init);
+        return id;
+    }
+
+    /** One sentence for the card: what the chosen mode means on THIS engine, on
+     *  THIS transport. Kept apart from `opencodeModeNote`, which has to describe
+     *  the headless and terminal forms too — where `--auto` is a real flag and
+     *  here it is not. */
+    private opencodePermissionWhy(mode: string | undefined): string {
+        const p = opencodePermissionFor(mode);
+        if (p.mode === 'plan') {
+            return 'OpenCode is running its own `plan` agent: every edit tool is disallowed, so it can read and reason and not write.';
+        }
+        if (!p.auto) {
+            return 'OpenCode\'s `build` agent asks before it acts, and here it really can — the permission card is the engine\'s own '
+                + 'request, answered back down the same connection.';
+        }
+        return 'The engine still asks — a hosted card has no `--auto` flag to hand it — and Agent Farm answers yes for you, '
+            + 'without opening a window. The one shape it refuses instead is the catastrophic one, out loud, because '
+            + '"never ask me" is not consent to that.';
+    }
+
+    /** The handshake, the session and the first prompt — everything that has to
+     *  happen before this card can be talked to. */
+    private async openShared(id: string, init: HostedSessionInit): Promise<void> {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        const rt = this.runtime();
+        if (!rt) {
+            this.failShared(id, 'This build of Agent Farm was not given a way to start `opencode acp`, '
+                + 'so an OpenCode session cannot be hosted here. The engine still works in a terminal and in a task.');
+            return;
+        }
+        const cwd = h.state.cwd;
+        try {
+            let sessionId = String(init.resume ?? '').trim();
+            let options: OpencodeConfigOption[];
+            if (sessionId) {
+                // ‼️ ATTACHED BEFORE THE LOAD, because `session/load` REPLAYS the
+                // whole conversation as ordinary update frames and they would
+                // otherwise arrive at a card the runtime does not know yet. The
+                // translator is put in `replaying` for exactly that window: this
+                // card is already showing all of it (see OpencodeState.replaying).
+                rt.attach(sessionId, cwd, this.opencodeHandlers(id));
+                this.withOpencode(id, c => ({ ...c, proto: opencodeReplay(c.proto, true) }));
+                options = await rt.loadSession(sessionId, cwd);
+                this.withOpencode(id, c => ({ ...c, proto: opencodeReplay(c.proto, false) }));
+            } else {
+                const made = await rt.newSession(cwd);
+                sessionId = made.sessionId;
+                options = made.options;
+                rt.attach(sessionId, cwd, this.opencodeHandlers(id));
+            }
+            const now = this.sessions.get(id);
+            if (!now || now.closed) { rt.detach(sessionId); return; }
+            this.withOpencode(id, c => ({ ...c, options, proto: { ...c.proto, sessionId } }));
+            this.mutate(id, s => ({ ...s, sessionId, status: 'idle', lastTs: Date.now() }));
+            // The pickers, now that there is a connection to apply them to. A
+            // refusal is said out loud rather than leaving a card claiming a
+            // model it is not using. X-519 — on a lent route, one of the route's
+            // models: the one asked when it is the route's, else its default.
+            const routeRt = this.engineRuntime?.(h.state.agentId, h.engine.id, {
+                providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned, model: h.state.model
+            });
+            await this.applyOpencodeConfig(id, {
+                model: routedModel(h.state.model, routeRt) || h.state.model,
+                mode: opencodePermissionFor(h.state.permissionMode).mode
+            }, true);
+            const firstFiles = init.firstAttachments ?? [];
+            if (init.firstPrompt?.trim() || firstFiles.length) {
+                this.send(id, init.firstPrompt ?? '', false, firstFiles);
+            }
+        } catch (e) {
+            this.failShared(id, String((e as Error).message ?? e));
+        }
+    }
+
+    /** A card that could not be started says why, once, and stays readable. */
+    private failShared(id: string, why: string): void {
+        this.mutate(id, s => ({
+            ...s, status: 'error', exitReason: why, lastTs: Date.now(),
+            messages: [...s.messages, {
+                id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error', text: why
+            }]
+        }));
+    }
+
+    /** Change one card's ACP state without rebuilding the session record. */
+    private withOpencode(id: string, fn: (c: OpencodeCard) => OpencodeCard): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        h.opencode = fn(h.opencode);
+    }
+
+    /** What the runtime tells this card about. Every one of these is called from
+     *  the shared process's reader, so none of them may throw. */
+    private opencodeHandlers(id: string): {
+        update(u: Record<string, unknown>): void;
+        permission(r: OpencodePermissionRequest): void;
+        reloaded(ok: boolean, why?: string, planned?: boolean): void;
+        note(text: string): void;
+        options(options: OpencodeConfigOption[]): void;
+    } {
+        return {
+            update: u => this.onOpencodeUpdate(id, u),
+            permission: r => this.onOpencodePermission(id, r),
+            reloaded: (ok, why, planned) => this.onOpencodeReloaded(id, ok, why, planned),
+            // X-519 — the reloaded session's own list and value, so the model box shows what it really runs
+            options: options => {
+                this.withOpencode(id, c => ({ ...c, options }));
+                const now = options.find(o => o.id === 'model')?.currentValue;
+                if (now) { this.mutate(id, s => (s.model === now ? s : { ...s, model: now })); }
+            },
+            note: text => this.mutate(id, s => ({
+                ...s, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system', text
+                }]
+            }))
+        };
+    }
+
+    /**
+     * One `session/update` for this card.
+     *
+     * ‼️ THE SAME REDUCER AS EVERY OTHER ENGINE, WHICH IS THE POINT. The frames
+     * are foreign; what comes out of the translator is not, so state, panel, cost
+     * strip and transcript stay one code path (see opencodeproto.ts).
+     */
+    private onOpencodeUpdate(id: string, update: Record<string, unknown>): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode || h.closed) { return; }
+        const t = translateOpencodeUpdate(h.opencode.proto, update);
+        h.opencode = { ...h.opencode, proto: t.state };
+        if (!t.events.length) { return; }
+        this.applyOpencodeEvents(id, t.events);
+    }
+
+    /** Reduce a batch of translated events and repaint once. */
+    private applyOpencodeEvents(id: string, events: unknown[]): void {
+        const h = this.sessions.get(id);
+        if (!h || h.closed) { return; }
+        const now = Date.now();
+        let changed = false;
+        for (const ev of events) {
+            const r = reduceEvent(h.state, ev, now);
+            h.state = r.state;
+            changed = changed || r.changed;
+            // ‼️ K-22 on a connection instead of a pipe. The reducer built the
+            // answer to a permission request a bypassed session must not open a
+            // window for; only the host can put it on the wire, and here that
+            // means an ACP option id rather than a control_response line.
+            const auto = drainAutoAnswer(h.state);
+            if (auto.line) {
+                h.state = auto.state;
+                this.answerOpencodeAuto(id, auto.line);
+            }
+        }
+        // ‼️ A CARD IS `working` FOR AS LONG AS ITS OWN PROMPT IS OUTSTANDING —
+        // not for as long as the shared process is up, which says nothing about
+        // this conversation. The reducer moves to `idle` on a `result`; a stray
+        // frame arriving after that must not put the card back to work.
+        if (h.opencode?.running && h.state.status === 'idle') {
+            h.state = { ...h.state, status: 'working' };
+        }
+        if (changed) { this.fire(id); }
+    }
+
+    /**
+     * The agent is asking whether it may do something.
+     *
+     * ‼️ TRANSLATED INTO THE CLAUDE-SHAPED `control_request` THE REDUCER ALREADY
+     * KNOWS, rather than given its own state. That is not tidiness: the reducer's
+     * `can_use_tool` branch is where K-22 lives — a bypassed session answering
+     * itself, and the one catastrophic shape it refuses anyway — and a second
+     * permission path would be a second place for that policy to be forgotten.
+     * What is kept apart is only what ACP adds: the option ids, which are what an
+     * answer has to travel back as.
+     */
+    private onOpencodePermission(id: string, req: OpencodePermissionRequest): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        if (h.closed || h.state.status === 'ended' || h.state.status === 'error') {
+            // Nobody is going to answer. `cancelled` un-parks the agent honestly.
+            this.runtime()?.answerPermission(req.requestId);
+            return;
+        }
+        h.opencode = { ...h.opencode, ask: { requestId: req.requestId, options: req.options } };
+        const call = req.toolCall ?? {};
+        const title = String(call.title ?? 'a tool');
+        this.applyOpencodeEvents(id, [{
+            type: 'control_request',
+            request_id: req.requestId,
+            request: {
+                subtype: 'can_use_tool',
+                tool_name: title,
+                display_name: title,
+                tool_use_id: typeof call.toolCallId === 'string' ? call.toolCallId : undefined,
+                input: (call.rawInput as Record<string, unknown> | undefined) ?? {}
+            }
+        }]);
+    }
+
+    /**
+     * ‼️ WHICH OPTION A YES OR A NO ACTUALLY IS — the one thing ACP adds that the
+     * Claude vocabulary has no word for.
+     *
+     * The agent publishes its own options with its own ids and a `kind`
+     * (`allow_once` · `allow_always` · `reject_once` · `reject_always`); the
+     * answer has to be one of THOSE ids, not a behaviour. So "allow" picks the
+     * once option, "allow, and stop asking" picks the always one when the agent
+     * offered it, and a no picks a reject. An engine that offered neither leaves
+     * this returning nothing, and the caller cancels the request instead — which
+     * un-parks the agent without inventing a choice it never gave.
+     */
+    private opencodeOptionFor(
+        options: { optionId: string; kind: string }[], want: 'allow' | 'always' | 'reject'
+    ): string | undefined {
+        const byKind = (k: string) => options.find(o => o.kind === k)?.optionId;
+        if (want === 'reject') { return byKind('reject_once') ?? byKind('reject_always'); }
+        if (want === 'always') { return byKind('allow_always') ?? byKind('allow_once'); }
+        return byKind('allow_once') ?? byKind('allow_always');
+    }
+
+    /** Put the answer the panel (or K-22) produced on the wire. */
+    private answerOpencodeAsk(
+        id: string, want: 'allow' | 'always' | 'reject'
+    ): boolean {
+        const h = this.sessions.get(id);
+        const ask = h?.opencode?.ask;
+        if (!h?.opencode || !ask) { return false; }
+        h.opencode = { ...h.opencode, ask: undefined };
+        const optionId = this.opencodeOptionFor(ask.options, want);
+        return this.runtime()?.answerPermission(ask.requestId, optionId) ?? false;
+    }
+
+    /**
+     * K-22's own answer, which the reducer wrote as a Claude control line because
+     * that is the only shape it can write. Read back for the single fact this
+     * transport needs — allow or deny — rather than reimplementing the policy
+     * that produced it.
+     */
+    private answerOpencodeAuto(id: string, line: string): void {
+        let allow = false;
+        try {
+            const frame = JSON.parse(line) as Record<string, unknown>;
+            const response = (frame.response as Record<string, unknown> | undefined) ?? {};
+            const verdict = (response.response as Record<string, unknown> | undefined) ?? {};
+            allow = verdict.behavior === 'allow';
+        } catch { allow = false; }
+        this.answerOpencodeAsk(id, allow ? 'allow' : 'reject');
+    }
+
+    /**
+     * The shared process died and this card was picked up again — or was not.
+     *
+     * ‼️ A RUNNING TURN DOES NOT SURVIVE, AND SAYING SO IS THE WHOLE POINT. The
+     * conversation does: it is in the engine's own store and `session/load` put
+     * this card back on it. What is gone is the turn that was in flight, and a
+     * card left at `working` after that is a card that will never move again.
+     */
+    private onOpencodeReloaded(id: string, ok: boolean, why?: string, planned?: boolean): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode || h.closed) { return; }
+        h.opencode = {
+            ...h.opencode, running: false, ask: undefined,
+            proto: opencodeReplay(h.opencode.proto, false)
+        };
+        if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); h.opencode.cancelTimer = undefined; }
+        // X-519 — a restart the route settings asked for cut nothing (it waits for every card to be idle): one line.
+        const text = ok && planned ? tUi('OpenCode restarted with the new route settings')
+            : ok
+            ? `${why ?? 'the shared OpenCode process restarted'} — this conversation was re-opened on the new one`
+            + ' and is ready. Anything that was mid-turn did not finish; say it again.'
+            : `${why ?? 'the shared OpenCode process stopped'}. The conversation itself is safe in OpenCode's own store —`
+            + ' resume this session to pick it up again.';
+        this.mutate(id, s => ({
+            ...s,
+            status: ok ? 'idle' : 'error',
+            ...(ok ? {} : { exitReason: why ?? 'the shared OpenCode process stopped' }),
+            turnStartedAt: undefined, turnTokensAt: undefined,
+            lastTs: Date.now(),
+            messages: [...s.messages, {
+                id: `sys-${Date.now().toString(36)}`, ts: Date.now(),
+                role: ok ? 'system' : 'error', text
+            }]
+        }));
+        if (ok) { this.releaseShared(id); }
+    }
+
+    /**
+     * Run ONE turn over the shared connection.
+     *
+     * ‼️ THE PROMPT IS A FRAME, NOT A COMMAND LINE, AND NOTHING IS SPAWNED. The
+     * turn ends when the engine answers the `session/prompt` request — there is
+     * no process exit to wait for, which is why (unlike the per-turn arm) the
+     * queue is released the moment the promise settles.
+     */
+    private promptShared(id: string, prompt: string, attachments: Attachment[] = []): boolean {
+        const h = this.sessions.get(id);
+        const rt = this.runtime();
+        const sessionId = h?.state.sessionId;
+        if (!h?.opencode || h.closed || !rt || !sessionId) { return false; }
+        // The brief, once, on the way into the first turn — consumed before the
+        // frame goes out so a retried turn cannot send it twice.
+        if (h.context || h.card) {
+            prompt = engineContextPrefix(h.context ?? '') + startCardPrefix(h.card ?? '') + prompt;
+            h.context = undefined;
+            h.card = undefined;
+        }
+        h.opencode = {
+            ...h.opencode, running: true, proto: opencodeTurnStarted(h.opencode.proto)
+        };
+        const blocks = opencodePromptBlocks(
+            prompt, attachments.filter(a => a.kind === 'image' && a.data));
+        rt.prompt(sessionId, blocks).then(
+            result => this.finishShared(id, result),
+            (e: Error) => this.failShared2(id, String(e?.message ?? e)));
+        return true;
+    }
+
+    /** The turn answered: translate the result, apply anything the pickers were
+     *  holding, then let the queue move. */
+    private finishShared(id: string, result: Record<string, unknown>): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); }
+        h.opencode = { ...h.opencode, running: false, cancelTimer: undefined, ask: undefined };
+        const t = translateOpencodeResult(h.opencode.proto, result, { model: h.state.model });
+        h.opencode = { ...h.opencode, proto: t.state };
+        if (h.closed) { return; }
+        this.applyOpencodeEvents(id, t.events);
+        const held = h.opencode.pending;
+        if (held) {
+            h.opencode = { ...h.opencode, pending: undefined };
+            void this.applyOpencodeConfig(id, held, false);
+        }
+        this.releaseShared(id);
+    }
+
+    /** The turn could not be run, or the connection went while it was running.
+     *  The SESSION survives — the conversation is in the engine's store. */
+    private failShared2(id: string, why: string): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode) { return; }
+        if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); }
+        h.opencode = { ...h.opencode, running: false, cancelTimer: undefined, ask: undefined };
+        if (h.closed) { return; }
+        this.endTurn(id, why);
+        this.releaseShared(id);
+    }
+
+    /** The next held message, once the turn really is over — which here is the
+     *  moment the prompt promise settles, because there is no process exiting
+     *  behind it (compare `releasePerTurn`). */
+    private releaseShared(id: string): void {
+        const h = this.sessions.get(id);
+        if (!h?.opencode || h.closed || h.opencode.running || !h.state.queued.length) { return; }
+        const next = shiftQueued(h.state);
+        h.state = next.state;
+        if (!next.text) { this.fire(id); return; }
+        h.state = {
+            ...h.state, status: 'working',
+            turnStartedAt: Date.now(), turnTokensAt: h.state.tokens
+        };
+        this.fire(id);
+        this.promptShared(id, enginePromptText(h.engine.id, next.text));
+    }
+
+    /**
+     * Apply the pickers to the live connection.
+     *
+     * ‼️ ONLY AT A TURN BOUNDARY, AND THE CALLER HAS ALREADY CHECKED. The
+     * protocol has no way to change the model of a turn that is running, and
+     * doing it anyway is the shape of change that either fails on stderr nobody
+     * reads (the `configId` trap) or moves the answer half way through.
+     */
+    private async applyOpencodeConfig(
+        id: string, want: { model?: string; mode?: string }, quiet: boolean
+    ): Promise<void> {
+        const rt = this.runtime();
+        const h = this.sessions.get(id);
+        const sessionId = h?.state.sessionId;
+        if (!rt || !h?.opencode || !sessionId) { return; }
+        for (const [configId, value] of [['model', want.model], ['mode', want.mode]] as const) {
+            const asked = String(value ?? '').trim();
+            if (!asked) { continue; }
+            const current = h.opencode.options.find(o => o.id === configId)?.currentValue;
+            /**
+             * ‼️ K-28 — IN THE ENGINE'S OWN SPELLING, BEFORE ANYTHING IS
+             * COMPARED OR SENT (see `opencodeResolveOption`). A resumed session
+             * asks for the bare `big-pickle` its transcript recorded while the
+             * connection is already on `opencode/big-pickle`, and comparing the
+             * two raw made a resume look like a model change.
+             */
+            const v = opencodeResolveOption(h.opencode.options, configId, asked);
+            if (!v) {
+                // Nothing the engine published matches. Saying so is only useful
+                // when a PERSON asked; on the startup application it means a
+                // stale name off a transcript and the engine's own current value
+                // is the right answer — the card is aligned to it instead.
+                if (quiet) {
+                    if (configId === 'model' && current && current !== h.state.model) {
+                        this.mutate(id, s => ({ ...s, model: current, pendingModel: undefined }));
+                    }
+                    continue;
+                }
+                this.mutate(id, s => ({
+                    ...s, pendingModel: undefined, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                        text: `OpenCode does not offer "${asked}" as a ${configId} on this session, so `
+                            + `nothing was changed — it is still "${current ?? 'whatever it was'}".`
+                    }]
+                }));
+                continue;
+            }
+            // Already what the engine says it is: a call that changes nothing is
+            // a round trip and a chance to fail for no gain. ‼️ K-28 — and this
+            // is where the resume now stops: same model, different spelling. The
+            // card takes the engine's spelling so the picker has a selected row.
+            if (current === v) {
+                if (configId === 'model' && h.state.model !== v) {
+                    this.mutate(id, s => ({ ...s, model: v, pendingModel: undefined }));
+                }
+                continue;
+            }
+            try {
+                const options = await rt.setConfig(sessionId, configId, v);
+                this.withOpencode(id, c => ({ ...c, options }));
+                if (configId === 'model' && !quiet) { this.chose(id, { model: v }); }
+                if (configId === 'model') {
+                    this.mutate(id, s => ({
+                        ...s, model: v, pendingModel: undefined,
+                        ...(quiet ? {} : {
+                            messages: [...s.messages, {
+                                id: `sys-${Date.now().toString(36)}`, ts: Date.now(),
+                                role: 'system', text: `model is now "${v}"`
+                            }]
+                        })
+                    }));
+                }
+            } catch (e) {
+                // ‼️ THE ENGINE'S OWN WORDS. `configId: expected string, received
+                // undefined` is the difference between "the picker is broken" and
+                // one key name, and A-16 measured that this failure otherwise
+                // lands on a stderr nobody is reading.
+                this.mutate(id, s => ({
+                    ...s, pendingModel: undefined, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                        text: `OpenCode refused the ${configId} change — ${String((e as Error).message ?? e)}`
+                    }]
+                }));
+            }
+        }
+    }
+
+    /** The model list this engine handed over when the session opened — the one
+     *  catalogue in this codebase that costs no spawn (see `opencodeModelsFrom`). */
+    opencodeModels(id: string): { id: string; label: string }[] {
+        const c = this.sessions.get(id)?.opencode;
+        return c ? opencodeModelsFrom(c.options) : [];
+    }
+
+    /**
+     * Run ONE turn of a per-turn engine: spawn, feed the prompt, read the JSONL.
+     *
+     * ‼️ THE PROMPT GOES ON STDIN AND STDIN IS THEN CLOSED. Measured: given the
+     * prompt as an argument the CLI still drains stdin when stdin is a pipe
+     * ("Reading additional input from stdin…") and waits for a second copy that
+     * never arrives. `-` says explicitly that the instruction is coming that way.
+     *
+     * ‼️ AND THE PROCESS EXITING IS THE END OF A TURN, NOT OF THE SESSION. The
+     * thread lives in the CLI's own store and the next turn resumes it by id —
+     * so `close` here must not do what it does on a persistent engine, or a
+     * Codex conversation would end itself the moment it finished answering.
+     */
+    private runTurn(id: string, prompt: string, attachments: Attachment[] = []): boolean {
+        const h = this.sessions.get(id);
+        if (!h || h.closed || h.engine.shape !== 'perTurn') { return false; }
+        // The brief, once, on the way into the first turn — this engine has no
+        // other channel for it (see Hosted.context). Consumed before the spawn
+        // so a retried turn does not send it twice.
+        if (h.context || h.card) {
+            prompt = engineContextPrefix(h.context ?? '') + startCardPrefix(h.card ?? '') + prompt;
+            h.context = undefined;
+            h.card = undefined;
+        }
+        // ‼️ AN ENGINE THAT CAN BE TOLD ITS OWN NAME IS TOLD IT (X-35). Gemini
+        // takes `--session-id <uuid>` on a first turn, so the conversation's
+        // identity is a FACT before a byte is sent instead of something learned
+        // from a parser afterwards — which is what everything downstream (the
+        // live row, the project stamp, the terminal binding) was waiting for.
+        // Generated here rather than in the pure argv builder, and remembered on
+        // the state so a retried turn does not invent a second conversation.
+        const preset = h.engine.id === 'gemini' && !threadOf(h) && !h.state.sessionId
+            ? (h.gemini = { ...(h.gemini ?? newGeminiState()), sessionId: newUuid() }).sessionId
+            : undefined;
+        const args = turnArgs(h.engine.id, {
+            thread: preset ? undefined : (threadOf(h) ?? h.state.sessionId),
+            newThread: preset,
+            model: h.state.model,
+            effort: h.state.effort,
+            permissionMode: h.state.permissionMode,
+            cwd: h.state.cwd,
+            // ‼️ An image cannot be described, it has to be SEEN, and Codex takes
+            // one the only way it offers: as a file it opens itself. Every other
+            // kind of attachment travels as a path inside the prompt, the same
+            // judgement the Claude side makes (see Attachment). Antigravity has
+            // no image flag at all, and `enginePromptText` has already put the
+            // picture's path in the prompt for it.
+            images: attachments.filter(a => a.kind === 'image').map(a => a.path)
+        });
+        // ‼️ WHERE THE PROMPT GOES IS THE ENGINE'S ANSWER, NOT A HABIT (measured
+        // per engine — see EngineTransport.promptOn). Codex reads it from stdin
+        // and would otherwise wait for a second copy; `agy` takes it as the value
+        // of `--print` and refuses an empty one.
+        const inArgv = h.engine.promptOn === 'argv';
+        const spawnArgs = inArgv ? ['--print', prompt, ...args] : args;
+        let child: cp.ChildProcess;
+        try {
+            // ‼️ AND WHETHER A SHELL SEES THAT COMMAND LINE FOLLOWS FROM IT.
+            // `claude` and `codex` are shims on Windows and need one; nothing
+            // user-typed reaches their command line. `agy` is a real .exe AND
+            // carries the message in argv, so a shell here would destroy any
+            // multi-line prompt — it is spawned without one and the argument
+            // arrives byte-for-byte.
+            child = cp.spawn(h.engine.exe, spawnArgs, {
+                cwd: h.state.cwd, shell: h.engine.spawnShell, windowsHide: true,
+                stdio: ['pipe', 'pipe', 'pipe'],
+                // ‼️ X-101 — THIS SPAWN USED TO PASS NO `env` AND SO INHERITED
+                // WHATEVER THE WINDOW CARRIED. A complete environment is built
+                // here for the same reason the runner builds one: an inherited
+                // `ANTHROPIC_BASE_URL` answers the question the chosen route was
+                // picked to answer, and the transcript records neither.
+                env: spawnEnvironment(
+                    // ‼️ X-169 — off the STATE, not the setting: every re-spawn
+                    // of a persistent engine comes through here, and reading it
+                    // live would move a long conversation onto whichever account
+                    // the "use this next" button was last pressed for.
+                    process.env, [this.accountLayer?.(h.engine.id, h.state.account)],
+                    // ‼️ X-103 — THIS CARD'S OWN ROUTE, not the agent's standing
+                    // one, when the card was started on one. Every re-spawn of a
+                    // persistent engine comes through here, so reading it off
+                    // the state is what keeps a long conversation on the
+                    // endpoint it began on even after the setting changes under
+                    // it — a route change is a different program (X-101), and a
+                    // card that quietly moved would be the transcript lying.
+                    this.engineRuntime?.(h.state.agentId, h.engine.id, {
+                        providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned
+                    }))
+            });
+        } catch (e) {
+            this.mutate(id, s => ({
+                ...s, status: 'idle', lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `err-${Date.now().toString(36)}`, ts: Date.now(),
+                    role: 'error', text: `${h.engine.exe} could not be started: ${String(e)}`
+                }]
+            }));
+            return false;
+        }
+        h.child = child;
+        h.buffer = '';
+        h.turn = { prompt, attachments, tries: (h.turn?.tries ?? 0), stderr: '' };
+
+        this.readStdout(id, child);
+        // ‼️ STDERR IS COLLECTED, NOT PRINTED AS IT ARRIVES. A per-turn engine
+        // writes its whole diagnosis to stderr and then exits, and the LAST
+        // thing it says is the one that matters — printing each chunk as its own
+        // row gave three lines of stack for one fault, and made it impossible to
+        // decide (at `close`) whether the fault was a retryable one.
+        child.stderr?.on('data', d => {
+            const cur = this.sessions.get(id);
+            if (!cur || cur.closed || !cur.turn) { return; }
+            cur.turn.stderr = (cur.turn.stderr + String(d)).slice(-4000);
+        });
+        child.on('error', e => {
+            if (this.sessions.get(id)?.closed) { return; }
+            this.endTurn(id, `the turn could not be run: ${String((e as Error).message ?? e)}`);
+        });
+        child.on('close', code => {
+            const cur = this.sessions.get(id);
+            if (!cur || cur.closed) { return; }
+            // ‼️ A LATE CLOSE FROM A PROCESS THAT IS NO LONGER THIS SESSION'S IS
+            // NOT THIS TURN'S DEATH. A per-turn engine lingers after it has
+            // answered, so the previous turn's process can outlive the start of
+            // the next one — and its `close`, read as the current turn's, wrote
+            // "the engine stopped without finishing the turn" across a turn that
+            // was running perfectly well.
+            if (cur.child && cur.child !== child) { return; }
+            cur.child = undefined;
+            const said = (cur.turn?.stderr ?? '').trim();
+
+            // ‼️ THE ONE FAILURE THAT IS NOT A FAILURE — AND THE ENGINE NAMES IT
+            // ITSELF, WHICH IS THE ONLY REASON THIS IS A RETRY AND NOT A GUESS:
+            //   thread-store conflict: thread <id> already has an active writer
+            // The previous turn's process has exited, its `close` has fired, and
+            // its hold on the thread store is STILL being released — measured
+            // end to end on this machine, on the first real two-turn run. There
+            // is no signal to wait on other than trying again, so it is tried
+            // again, a bounded number of times, on the same prompt, and nothing
+            // about it reaches the conversation unless it keeps failing.
+            const conflict = /thread-store conflict|already has an active writer/i.test(said);
+            const tries = cur.turn?.tries ?? 0;
+            if (code !== 0 && conflict && tries < RESUME_RETRIES && cur.turn) {
+                const again = { ...cur.turn, tries: tries + 1 };
+                cur.turn = again;
+                setTimeout(() => {
+                    const now = this.sessions.get(id);
+                    if (!now || now.closed || now.child) { return; }
+                    now.turn = again;
+                    this.runTurn(id, again.prompt, again.attachments);
+                }, RESUME_RETRY_MS * (tries + 1));
+                return;
+            }
+
+            if (code !== 0 && said) {
+                // The ENGINE'S OWN WORDS. `os error 10013` is the difference
+                // between "Codex is broken" and "your security software is
+                // refusing the socket", and a tidied message throws that away.
+                const last = said.split(/\r?\n/).filter(l => l.trim()).slice(-1)[0] ?? said;
+                this.mutate(id, s => ({
+                    ...s, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `err-${Date.now().toString(36)}`, ts: Date.now(),
+                        role: 'error', text: last.trim().slice(0, 400)
+                    }]
+                }));
+            }
+            // ‼️ AND HERE — NOT AT `turn.completed` — IS WHERE THE TURN ENDS.
+            // The state was held at `working` for as long as this process lived
+            // (see onData), because that is exactly how long the session could
+            // not run another turn. Now it can.
+            if (cur.turn?.reported) {
+                this.mutate(id, s => ({ ...s, status: 'idle', lastTs: Date.now() }));
+            } else {
+                this.endTurn(id, code === 0
+                    ? 'the engine stopped without finishing the turn'
+                    : `the turn did not run (exit ${code})`);
+            }
+            cur.turn = undefined;
+            // ‼️ X-43 — THE LAST MANDATORY READING. The rollout's final
+            // `token_count` line can be written after the answer has streamed,
+            // so the figure the card settles on has to be taken once the writer
+            // is actually gone. Forced past the throttle for that reason.
+            if (this.pollCodexContext(cur, true)) { this.fire(id); }
+            // …and only NOW is the thread free for the next one (see releasePerTurn).
+            this.releasePerTurn(id);
+        });
+
+        try {
+            // The prompt is already in argv on an engine that takes it there;
+            // stdin is still closed, because a pipe left open is a process that
+            // may sit waiting for input nobody is going to send.
+            if (!inArgv) { child.stdin?.write(prompt); }
+            child.stdin?.end();
+        } catch {
+            this.endTurn(id, 'the prompt could not be delivered');
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The project brief as TEXT, for an engine with no system-prompt flag.
+     *
+     * The same file the Claude path hands over on the command line — written by
+     * the same call, so the two engines are told the same thing and a brief that
+     * changed is current on both. Unreadable is not an error worth stopping a
+     * session for: the session simply starts unbriefed, which is the state it
+     * would have been in with no project at all.
+     */
+    /** X-536 — what a per-turn session started here is told about Agent Farm, by engine ('' = nothing). */
+    private startCardFor: (engine: string) => string = () => '';
+
+    setStartCard(fn: (engine: string) => string): void {
+        this.startCardFor = fn;
+    }
+
+    private readProjectContext(
+        projectId: string | undefined, superpowers = false
+    ): string | undefined {
+        const file = this.projectContextFile(projectId, superpowers);
+        if (!file) { return undefined; }
+        try { return fs.readFileSync(file, 'utf8').trim() || undefined; } catch { return undefined; }
+    }
+
+    /** Close a per-turn engine's turn that ended without saying so. The SESSION
+     *  survives — the thread is in the CLI's store and the next message resumes
+     *  it, which is exactly the state a reader should be left in. */
+    /**
+     * ‼️ K-27 — AND IT SAYS HOW THE TURN ENDED, which it used to leave to the
+     * turn BEFORE it.
+     *
+     * A turn that dies here never reaches the `result` reducer — on a per-turn
+     * engine there is no result line to read, because Stop kills the process —
+     * so `lastTurn` kept whatever the previous turn had put there and the strip
+     * above the composer described a turn that was two turns old. The word is
+     * passed in rather than guessed: only the caller knows whether a person
+     * pressed Stop or the engine fell over.
+     */
+    private endTurn(id: string, why: string, outcome: 'interrupted' | 'failed' = 'failed'): void {
+        this.mutate(id, s => {
+            const now = Date.now();
+            const spent = s.turnTokensAt !== undefined
+                ? Math.max(0, s.tokens - s.turnTokensAt)
+                : undefined;
+            return {
+                ...s, status: 'idle', lastTs: now,
+                turnStartedAt: undefined, turnTokensAt: undefined,
+                lastTurn: {
+                    endedAt: now,
+                    ms: s.turnStartedAt ? Math.max(0, now - s.turnStartedAt) : undefined,
+                    tokens: spent || undefined,
+                    wTokens: Math.round(s.turnWTokens ?? 0) || undefined,
+                    cost: 0,
+                    apiCalls: s.turnApiCalls || undefined,
+                    steps: s.turnSteps || undefined,
+                    thinking: s.turnThinking || undefined,
+                    outcome,
+                    model: s.turnModel, effort: s.turnEffort
+                },
+                messages: [...s.messages, {
+                    id: `err-${now.toString(36)}`, ts: now,
+                    role: 'error', text: why
+                }]
+            };
+        });
+    }
+
+    /**
+     * "What are you really running on?" — `get_settings`, the CLI's own answer.
+     *
+     * ‼️ THE PANEL USED TO ANSWER THIS FROM ITS OWN PICKERS, WHICH IS TO SAY IT
+     * COULD NOT ANSWER IT AT ALL. A picker left on "Default" — the normal case
+     * — means "pass no flag", so the strip above the composer had nothing to
+     * print and printed nothing, while the turn it was pricing ran on a real
+     * model at a real effort resolved from the settings chain. The CLI resolves
+     * that chain itself and will state the result; asking is free (a local
+     * question about local settings: no tokens, no API call).
+     *
+     * Asked at the start of the session and again at the start of every turn,
+     * tagged with that turn's clock so a late answer cannot relabel the next
+     * turn (see pendingSettings). A CLI too old to know the subtype answers
+     * `error`, which changes nothing and is never shown.
+     */
+    private askSettings(id: string, turnStartedAt?: number): void {
+        const h = this.sessions.get(id);
+        if (!h) { return; }
+        // A per-turn engine has no live control channel to ask on, and nothing
+        // to resolve: the flags of the turn about to start ARE what it runs on.
+        // OpenCode HAS a channel and it is not this one — `get_settings` is
+        // Claude's control vocabulary, and the same question is answered there by
+        // the `configOptions` every `session/new` and `session/set_config_option`
+        // volunteers (see applyOpencodeConfig).
+        if (h.engine.shape !== 'persistent') { return; }
+        const requestId = `settings-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'get_settings'))) { return; }
+        h.state = { ...h.state, pendingSettings: { requestId, turnStartedAt } };
+    }
+
+    private mutate(id: string, fn: (s: ConsoleSessionState) => ConsoleSessionState): void {
+        const h = this.sessions.get(id);
+        if (!h) { return; }
+        h.state = fn(h.state);
+        this.fire(id);
+    }
+
+    /**
+     * ‼️ U-36 — A CHUNK BOUNDARY IS NOT A CHARACTER BOUNDARY.
+     *
+     * `String(buffer)` decodes each chunk on its own, and a chunk ends
+     * wherever the pipe happened to flush — which on a Turkish reply lands
+     * in the middle of a two-byte `ü` / `ı` / `ş` often enough to see. The
+     * two halves each decode to U+FFFD and the user reads `hazır\uFFFD\uFFFDm`.
+     * Nothing upstream is wrong: the engine sent correct UTF-8 and this
+     * reader cut it.
+     *
+     * `StringDecoder` is the fix and the whole of it: it holds an incomplete
+     * trailing sequence back until the next chunk completes it. One decoder
+     * per child, because the held bytes belong to that stream — sharing one
+     * across sessions would splice two conversations together at a boundary.
+     *
+     * It is not engine-specific and never was: Claude simply got lucky more
+     * often, because its stream-json lines are shorter and flush on their own
+     * newlines. The same cut was always possible there.
+     */
+    private readStdout(id: string, child: cp.ChildProcess): void {
+        const decoder = new StringDecoder('utf8');
+        child.stdout?.on('data', (d: Buffer | string) => this.onData(
+            id, typeof d === 'string' ? d : decoder.write(d)));
+        // Whatever the last chunk left dangling is not a character and never
+        // will be; flushing it keeps a truncated stream from swallowing its
+        // final line rather than merely mangling one glyph.
+        child.stdout?.on('end', () => {
+            const tail = decoder.end();
+            if (tail) { this.onData(id, tail); }
+        });
+    }
+
+    private onData(id: string, chunk: string): void {
+        const h = this.sessions.get(id);
+        if (!h || h.closed) { return; }
+        h.buffer += chunk;
+        const lines = h.buffer.split('\n');
+        h.buffer = lines.pop() ?? '';
+        let changed = false;
+        const now = Date.now();
+        for (const line of lines) {
+            if (!line.trim()) { continue; }
+            let parsed: unknown;
+            try { parsed = JSON.parse(line); } catch { continue; }
+            // ‼️ ANOTHER ENGINE IS A TRANSLATION, NOT ANOTHER REDUCER. Neither
+            // Codex (codexproto.ts) nor Antigravity (agyproto.ts) shares a single
+            // field name with Claude's stream, so their lines are turned into the
+            // events this reducer already understands and everything downstream —
+            // state, panel, cost strip, transcript — stays one code path. That is
+            // what makes a third engine a file rather than a fork.
+            if (h.engine.shape === 'perTurn') {
+                const events = h.engine.id === 'agy'
+                    ? (() => {
+                        const t = translateAgy(h.agy ?? newAgyState(), parsed, { model: h.state.model });
+                        h.agy = t.state;
+                        return t.events;
+                    })()
+                    : h.engine.id === 'gemini'
+                        ? (() => {
+                            const t = translateGemini(
+                                h.gemini ?? newGeminiState(), parsed, { model: h.state.model });
+                            h.gemini = t.state;
+                            return t.events;
+                        })()
+                        : (() => {
+                            const t = translateCodex(h.codex ?? newCodexState(), parsed, { model: h.state.model });
+                            h.codex = t.state;
+                            return t.events;
+                        })();
+                for (const ev of events) {
+                    const rr = reduceEvent(h.state, ev, now);
+                    h.state = rr.state;
+                    changed = changed || rr.changed;
+                    // ‼️ K-22 — a bypassed session answers its own permission
+                    // request. The reducer built the answer; only the host can
+                    // put it on the wire, and it must go out on the same pass
+                    // or the turn waits on a window nobody will ever see.
+                    const auto = drainAutoAnswer(h.state);
+                    if (auto.line) {
+                        h.state = auto.state;
+                        this.write(id, auto.line);
+                    }
+                    // The engine SAID the turn is finished. Remembered because
+                    // the process's own exit can no longer be read as the end
+                    // (see the note below) and something has to tell an ordinary
+                    // ending apart from a death.
+                    if ((ev as { type?: string }).type === 'result' && h.turn) {
+                        h.turn.reported = true;
+                    }
+                }
+                // ‼️ X-43 — and the window is asked for on the way past. The
+                // rollout is being appended to WHILE the turn runs, so this is a
+                // live reading and not an end-of-turn one; the probe's own
+                // throttle (700 ms) and mtime cache mean a chatty turn does not
+                // turn into a disk read per line. Forced when the turn is over,
+                // because that is the moment the file has just been given its
+                // last word and the card is about to be looked at.
+                changed = this.pollCodexContext(
+                    h, h.state.status === 'idle' || !h.child) || changed;
+                // ‼️ THE TURN IS NOT OVER UNTIL THE PROCESS IS GONE, AND THE
+                // ENGINE SAYS OTHERWISE FIVE SECONDS EARLY.
+                //
+                // Measured end to end on this machine: `turn.completed` is
+                // printed, the answer is complete — and `codex exec` then lives
+                // on for another ~5.4 SECONDS, holding the thread's writer lock
+                // the whole time. A turn started in that window is refused
+                // outright (`thread-store conflict: … already has an active
+                // writer`), so a session that called itself idle was a session
+                // that accepted a message it could not run.
+                //
+                // Holding the state at `working` is not cosmetic: `acceptUserText`
+                // only HONOURS a hold while the status is working (an idle
+                // session starts a turn whatever the caller asked for), so this
+                // one line is what makes the queue, the release and the whole
+                // per-turn transport correct rather than racing.
+                if (h.child && h.state.status === 'idle') {
+                    h.state = { ...h.state, status: 'working' };
+                }
+                continue;
+            }
+            const wanted = h.state.pendingPermissionMode?.mode;
+            const before = h.state;
+            const r = reduceEvent(h.state, parsed, now);
+            h.state = r.state;
+            this.chose(id, confirmedChoice(before, h.state));
+            changed = changed || r.changed;
+            // ‼️ X-267 — the `init` line is where the conversation gets its id,
+            // and therefore where its context can finally be filed under it.
+            // Once only: `pinFrom` is cleared whether or not the copy succeeds,
+            // because a retry on every subsequent line would be a filesystem
+            // call per event for a fact that is not going to change.
+            if (h.pinFrom && h.state.sessionId) {
+                const from = h.pinFrom;
+                h.pinFrom = undefined;
+                this.pinProjectContext(h.state.sessionId, from);
+            }
+            // The nudge waits for the CLI's yes (see retryOnGrant). "Agreed"
+            // means the pending switch resolved AND the mode really moved —
+            // a refusal clears the pending field too, and must say nothing.
+            if (wanted && !h.state.pendingPermissionMode && h.retryOnGrant) {
+                const nudge = h.retryOnGrant;
+                h.retryOnGrant = undefined;
+                if (h.state.permissionMode === wanted) { this.send(id, nudge); }
+            }
+        }
+        if (!changed) { return; }
+        // a finished turn releases the next queued message
+        if (h.state.status === 'idle' && h.state.queued.length) {
+            /**
+             * ‼️ X-213 — A HELD MESSAGE IS STILL THE NEXT MESSAGE, and the
+             * account box promised the next message another sign-in.
+             *
+             * `send` keeps that promise for a message said into an idle card.
+             * One parked while a turn was running arrives HERE instead, and
+             * writing it down the pipe would spend it on the account this
+             * conversation is leaving — with the card still saying the swap is
+             * pending, which is a promise that fails silently (Principle 1).
+             *
+             * Taken out of the queue WITHOUT starting a turn: `shiftQueued`
+             * would append the user line and open a turn, and the re-seal
+             * carries the same text as the resumed session's first prompt, so
+             * the message would be said twice.
+             */
+            if (h.state.accountNext && h.state.sessionId && String(h.state.queued[0] || '').trim()) {
+                const [held, ...rest] = h.state.queued;
+                h.state = { ...h.state, queued: rest, lastTs: Date.now() };
+                this.fire(id);
+                void this.reseal(id, held.trim(), []);
+                return;
+            }
+            // U-200 — stamped as `send` stamps it, so its row names its transcript line
+            const qid = h.engine.shape !== 'perTurn' && h.engine.shape !== 'sharedAcp' ? newUuid() : undefined;
+            const next = shiftQueued(h.state, Date.now(), qid);
+            h.state = next.state;
+            if (next.text) {
+                // …and a released message is a turn of its own, so it asks the
+                // same question about itself (see askSettings)
+                this.askSettings(id, h.state.turnStartedAt);
+                this.write(id, userMessageLine(next.text, [], qid));
+            }
+        }
+        this.fire(id);
+    }
+
+    /**
+     * ‼️ THE NEXT HELD MESSAGE, ON A PER-TURN ENGINE, RELEASED WHERE IT IS SAFE.
+     *
+     * Not where the persistent engine releases it. There the queue moves when
+     * the reducer says the turn ended, because the process is still there to
+     * take the next line. Here the process is the turn and it is still exiting
+     * when it says it has finished — a spawn on that signal is refused by the
+     * CLI for holding the thread twice. So the queue moves on the process's
+     * DEATH, which is the only moment the thread is really free.
+     */
+    private releasePerTurn(id: string): void {
+        const h = this.sessions.get(id);
+        if (!h || h.closed || h.child || !h.state.queued.length) { return; }
+        const next = shiftQueued(h.state);
+        h.state = next.state;
+        if (!next.text) { this.fire(id); return; }
+        h.state = {
+            ...h.state, status: 'working',
+            turnStartedAt: Date.now(), turnTokensAt: h.state.tokens
+        };
+        this.fire(id);
+        this.runTurn(id, enginePromptText(h.engine.id, next.text));
+    }
+
+    private write(id: string, line: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h || h.closed) { return false; }
+        if (!h.child?.stdin || h.child.stdin.destroyed) { return false; }
+        try { h.child.stdin.write(line); return true; } catch { return false; }
+    }
+
+    /**
+     * Say something. While a turn runs this goes INTO that turn (the CLI
+     * delivers it at the turn's next step — measured, see acceptUserText);
+     * `hold` instead parks it in the queue until the turn ends.
+     */
+    send(
+        id: string, text: string, hold = false, attachments: Attachment[] = []
+    ): { queued: boolean; refused?: string } | undefined {
+        const h = this.sessions.get(id);
+        if (!h || h.state.status === 'ended' || h.state.status === 'error') { return undefined; }
+        let ready: Attachment[] = [];
+        if (attachments.length) {
+            // The queue carries strings (shiftQueued/takeQueued), so a held
+            // message cannot hold a file. Refusing beats dropping it silently.
+            if (hold) {
+                return { queued: false, refused: 'A message with attachments cannot be held — send it, or remove the files first.' };
+            }
+            const loaded = this.loadAttachments(attachments);
+            if (loaded.refused) { return { queued: false, refused: loaded.refused }; }
+            ready = loaded.ready;
+        }
+        const notes: AttachmentNote[] = ready.map(a => ({ name: a.name, kind: a.kind, path: a.path, bytes: a.bytes }));
+        /**
+         * ‼️ X-213 — THE PROMISE MADE BY THE ACCOUNT BOX IS KEPT HERE.
+         *
+         * `setAccount` recorded which sign-in the NEXT message runs on; this is
+         * that message. The process is ended and the same conversation comes
+         * back up on the other account with `--resume`, carrying this prompt as
+         * its first — which is what the user was doing by hand in a second
+         * terminal when a window hit its ceiling.
+         *
+         * ‼️ AND NOT MID-TURN. A turn that is running is a process that is
+         * answering; killing it would throw away the answer being written. The
+         * message is held instead, exactly as any other message said into a
+         * running turn is, and the swap happens when that turn is over and the
+         * held message is sent.
+         */
+        const midTurn = h.state.status === 'working';
+        if (h.state.accountNext && !hold && !midTurn) {
+            void this.reseal(id, text.trim(), ready);
+            this.fire(id);
+            return { queued: true };
+        }
+        const startedBefore = h.state.turnStartedAt;
+        // ‼️ YOU CANNOT SPEAK INTO A TURN THAT IS A PROCESS. Claude's session is
+        // a live pipe, so a message said mid-turn is delivered at the turn's next
+        // step ("steering"). A Codex turn is `codex exec` with its stdin already
+        // closed — there is nowhere to put the words. Rather than accept them and
+        // lose them, they are HELD, which is a state the composer already draws
+        // and the reader can already act on.
+        const perTurn = h.engine.shape === 'perTurn';
+        // ‼️ AND THE THIRD SHAPE HOLDS FOR A DIFFERENT REASON, WHICH THE READER
+        // IS TOLD RATHER THAN LEFT TO INFER. Codex holds because its stdin is
+        // already closed. OpenCode's connection is wide open — it simply does not
+        // declare a way to speak into a turn that is running, so a message sent
+        // into one would be accepted by the pipe and dropped by the agent. Saying
+        // "I steered it" there would be a lie with no error attached, which is
+        // the worst kind; the message is HELD instead, which the composer already
+        // draws and the reader can act on.
+        const shared = h.engine.shape === 'sharedAcp';
+        const busyShared = shared && !!h.opencode?.running;
+        // ‼️ AND A TURN IS NOT OVER UNTIL ITS PROCESS IS GONE. Measured, and it
+        // cost the first end-to-end run: `turn.completed` arrives while the
+        // process is still shutting down and still holding the thread, so a
+        // second turn spawned on the strength of that line is refused by the CLI
+        //   `thread/resume failed: thread <id> already …`
+        // and the conversation loses the message. On a persistent engine the
+        // result line genuinely ends the turn, because the process stays; here
+        // the process IS the turn, and `h.child` is what says it is still there.
+        const holdNow = hold
+            || (perTurn && (h.state.status === 'working' || !!h.child))
+            // ‼️ …and a card whose session is still being opened holds too. There
+            // is no `ses_…` to prompt yet, and a message sent into that gap would
+            // be accepted and lost.
+            || (shared && (busyShared || h.state.status === 'working' || h.state.status === 'starting'));
+        // X-519 — a card waiting to be put back on a reloaded process: the message waits in its queue and
+        // its reload releases it (onOpencodeReloaded → releaseShared). A file cannot wait in that queue.
+        if (shared && !!h.state.sessionId && this.opencodeRt?.awaitsReload(h.state.sessionId)) {
+            if (ready.length) {
+                return { queued: false, refused: 'OpenCode is restarting with the new route settings — send the files again in a moment.' };
+            }
+            const said = text.trim();
+            if (!said) { return { queued: false }; }
+            h.state = { ...h.state, lastTs: Date.now(), queued: [...h.state.queued, said] };
+            this.fire(id);
+            return { queued: true };
+        }
+        // S-54 — the persistent engine's line is stamped, so the CLI's receipts
+        // (an interrupt's `cancelled` list) can name this message back.
+        const uuid = !perTurn && !shared ? newUuid() : undefined;
+        const r = acceptUserText(h.state, text, Date.now(), holdNow, notes, uuid);
+        h.state = r.state;
+        // A NEW turn (not a message said into a running one) asks what it is
+        // about to run on, and asks it BEFORE the prompt goes down the pipe —
+        // the CLI is idle at that moment, so the answer comes straight back
+        // (see askSettings). A per-turn engine has nobody to ask: the flags of
+        // the turn about to start ARE the answer.
+        if (!perTurn && !shared && h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
+            this.askSettings(id, h.state.turnStartedAt);
+        }
+        if (r.send) {
+            if (perTurn) {
+                this.runTurn(id, enginePromptText(h.engine.id, text.trim(), ready), ready);
+            } else if (shared) {
+                this.promptShared(id, enginePromptText(h.engine.id, text.trim(), ready), ready);
+            } else {
+                this.write(id, userMessageLine(text.trim(), ready, uuid));
+            }
+        }
+        this.fire(id);
+        return { queued: !r.send };
+    }
+
+    /**
+     * Turn the composer's list into something the stream can carry.
+     *
+     * ‼️ THE BYTES ARE READ HERE, AT SEND TIME — not when the file was hung on
+     * the message. A file deleted or swapped in between is caught now, which is
+     * the only moment where saying so is still useful.
+     */
+    private loadAttachments(list: Attachment[]): { ready: Attachment[]; refused?: string } {
+        if (list.length > ATTACH_LIMITS.count) {
+            return { ready: [], refused: `Too many files: ${list.length}, the limit is ${ATTACH_LIMITS.count}.` };
+        }
+        const ready: Attachment[] = [];
+        let total = 0;
+        for (const a of list) {
+            let stat: fs.Stats;
+            try { stat = fs.statSync(a.path); }
+            catch { return { ready: [], refused: `This file is no longer there: ${a.name}` }; }
+            // A folder is a perfectly good thing to point an agent at; it just
+            // cannot be read as bytes, so it always travels as a path.
+            if (stat.isDirectory()) {
+                ready.push({ ...a, kind: 'path', bytes: 0, data: undefined, mediaType: undefined });
+                continue;
+            }
+            if (a.kind !== 'image') { ready.push({ ...a, bytes: stat.size, data: undefined }); continue; }
+            if (stat.size > ATTACH_LIMITS.perImageBytes) {
+                return { ready: [], refused: `${a.name} is ${mb(stat.size)} — the limit per image is ${mb(ATTACH_LIMITS.perImageBytes)}.` };
+            }
+            total += stat.size;
+            if (total > ATTACH_LIMITS.totalBytes) {
+                return { ready: [], refused: `These files add up to more than ${mb(ATTACH_LIMITS.totalBytes)} — send them in two messages.` };
+            }
+            try { ready.push({ ...a, bytes: stat.size, data: fs.readFileSync(a.path).toString('base64') }); }
+            catch { return { ready: [], refused: `This file could not be read: ${a.name}` }; }
+        }
+        return { ready };
+    }
+
+    /** Change a held message before it is said. Empty text drops it. */
+    editQueued(id: string, index: number, text: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        const r = editQueued(h.state, index, text);
+        if (r.changed) { h.state = r.state; this.fire(id); }
+        return r.changed;
+    }
+
+    /**
+     * Take a held message out of the queue and return its text — the caller
+     * decides what happens to it (the panel puts it back in the composer to be
+     * edited; `releaseQueued` says it straight away).
+     */
+    takeQueued(id: string, index: number): string | undefined {
+        const h = this.sessions.get(id);
+        if (!h) { return undefined; }
+        const r = takeQueued(h.state, index);
+        if (r.text === undefined) { return undefined; }
+        h.state = r.state;
+        this.fire(id);
+        return r.text;
+    }
+
+    /** Stop holding it: say it now, into the running turn. */
+    releaseQueued(id: string, index: number): boolean {
+        const text = this.takeQueued(id, index);
+        if (text === undefined) { return false; }
+        return !!this.send(id, text);
+    }
+
+    /**
+     * Answer the question the turn is parked on (see ConsoleAsk).
+     *
+     * The line is written from the state the reducer produced, not from the
+     * caller's own idea of what was pending, so two clicks on a repainted panel
+     * can only answer once.
+     */
+    answer(id: string, decision: AskDecision): boolean {
+        const h = this.sessions.get(id);
+        if (!h?.state.pendingAsk) { return false; }
+        const r = answerAsk(h.state, decision, Date.now());
+        if (!r.line) { return false; }
+        h.state = r.state;
+        // ‼️ THE STATE CHANGE IS SHARED, THE WIRE IS NOT. `answerAsk` is pure and
+        // can only produce Claude's control line; on the shared connection the
+        // agent is waiting for one of the OPTION IDS it published, so the verdict
+        // is carried across rather than the line (see opencodeOptionFor).
+        const wrote = h.engine.shape === 'sharedAcp'
+            ? this.answerOpencodeAsk(id,
+                decision.kind === 'deny' ? 'reject'
+                    : decision.kind === 'allow' && decision.always ? 'always' : 'allow')
+            : this.write(id, r.line);
+        this.fire(id);
+        return wrote;
+    }
+
+    /**
+     * Stop the running turn. The session survives — that is the whole point.
+     *
+     * ‼️ A parked question is answered FIRST. `interrupt` ends the turn, but a
+     * `can_use_tool` the CLI is still waiting on belongs to the tool, not the
+     * turn: leaving it unanswered parks the process on a request nobody will
+     * ever send a response for, and Esc would look like it hung the session.
+     *
+     * ‼️ X-480 — `from` is the surface that asked; the turn's closing row names
+     * it, so a stopped turn can always be told apart from one the engine ended
+     * by itself (see stopSource).
+     */
+    interrupt(id: string, from: StopFrom): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        if (h.state.pendingAsk) {
+            this.answer(id, { kind: 'deny', message: 'The user interrupted the turn.' });
+        }
+        // ‼️ ON A PER-TURN ENGINE, STOPPING THE TURN IS STOPPING THE PROCESS —
+        // and the SESSION survives it, which is the whole reason this is safe:
+        // the conversation lives in the CLI's own thread store and the next
+        // message resumes it by id. There is no control channel to interrupt on
+        // because there is no long-lived process to hold one.
+        if (h.engine.shape === 'perTurn') {
+            if (!h.child) { return false; }
+            killTree(h.child);
+            h.child = undefined;
+            this.endTurn(id, `turn interrupted · ${stopWords(from)}`, 'interrupted');
+            return true;
+        }
+        /**
+         * ‼️ K-25 — STOP ASKS THE ENGINE TO STOP, AND ONLY THE ENGINE.
+         *
+         * `session/cancel` was measured to end a real turn with `stopReason:
+         * "cancelled"`, a zero usage and a conversation that took the next turn
+         * on the same `ses_…`. Killing anything here would be wrong twice over:
+         * the process is SHARED, so it would end every other card's turn as
+         * well, and this card would lose a conversation that did not need to be
+         * lost. The blunt path exists — it is the timer below — and it is what
+         * happens only if the engine stops listening (OPENCODE_CANCEL_GRACE_MS).
+         */
+        if (h.engine.shape === 'sharedAcp') {
+            const card = h.opencode;
+            if (!card?.running || !h.state.sessionId) { return false; }
+            const rt = this.runtime();
+            if (!rt) { return false; }
+            rt.cancel(h.state.sessionId);
+            if (card.cancelTimer) { clearTimeout(card.cancelTimer); }
+            h.opencode = {
+                ...card,
+                cancelTimer: setTimeout(() => {
+                    const now = this.sessions.get(id);
+                    if (!now?.opencode?.running || now.closed) { return; }
+                    now.opencode = { ...now.opencode, cancelTimer: undefined };
+                    this.mutate(id, s => ({
+                        ...s, lastTs: Date.now(),
+                        messages: [...s.messages, {
+                            id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                            text: 'OpenCode did not answer the stop request, so Agent Farm restarted the shared '
+                                + 'runtime it owns. Every OpenCode card is being re-opened on the new one; '
+                                + 'the conversations themselves are in OpenCode\'s own store and are safe.'
+                        }]
+                    }));
+                    this.runtime()?.restart();
+                }, OPENCODE_CANCEL_GRACE_MS)
+            };
+            this.mutate(id, s => ({ ...s, lastTs: Date.now(), stopAsked: { from, ts: Date.now() } }));
+            return true;
+        }
+        /**
+         * ‼️ S-54 — STOP MEANS STOP, INCLUDING THE WORDS ALREADY ON THEIR WAY.
+         *
+         * Measured (claude-cli 2.1.269, test-driven with haiku): a message said
+         * into the running turn is QUEUED by the CLI, and a plain `interrupt`
+         * ends the turn and then — one second later, unprompted — the CLI opens
+         * a NEW turn with the queued message, whose receipt had even said
+         * `still_queued: []`. The model, reading its own context, carries on
+         * with exactly what it was doing. That is the "it stopped for a moment
+         * and went on" the user reported.
+         *
+         * The CLI advertises the cure on `system/init.capabilities`:
+         * `interrupt_cancel_queued_v1` — the same request with
+         * `cancel_queued: true` withdraws every queued message alongside the
+         * abort and lists them under `cancelled` (measured: no new turn in the
+         * 12 s watched). Sent only when advertised, which is the contract the
+         * CLI states for its open capability set; an older CLI gets the plain
+         * request and the receipt's `still_queued` is shown to the reader
+         * instead, so a survivor is at least never a surprise.
+         */
+        /**
+         * ‼️ S-62 — STOP MEANS STOP, INCLUDING THE PROCESSES THE TURN LEFT
+         * RUNNING BEHIND IT.
+         *
+         * Measured (claude-cli 2.1.269, tools/probe_background.js): a Bash call
+         * backgrounded with `run_in_background` survives the interrupt, and
+         * when it finishes the CLI opens a new turn on its own to hand the
+         * result to the model — which then carries on with the original work,
+         * 7 s after the user pressed Stop. `cancel_queued` cannot reach it: the
+         * notification does not exist yet when the interrupt is answered.
+         *
+         * The CLI owns those processes and offers `stop_task` for exactly this
+         * (its own schema: a consumer with no per-task stop is meant to have the
+         * interrupt kill them, and this build measured as not doing so for a
+         * backgrounded shell). Asked for each task the CLI last listed, BEFORE
+         * the abort, in the same write sequence: a task stopped this way sends
+         * its notification as `stopped`, which measured opens no turn in either
+         * order — and stopping first means a notification that does land in
+         * the queue is withdrawn by the `cancel_queued` that follows it.
+         */
+        for (const t of h.state.backgroundTasks ?? []) { this.stopTask(id, t.id); }
+        const rid = `int-${++h.reqSeq}`;
+        const canCancel = (h.state.capabilities ?? []).includes('interrupt_cancel_queued_v1');
+        h.state = {
+            ...h.state, pendingInterrupt: { requestId: rid },
+            // A stop asked of an idle seat stops nothing, so it is not recorded:
+            // it would otherwise be read as the cause of the next turn's end.
+            ...(h.state.status === 'working' ? { stopAsked: { from, ts: Date.now() } } : {})
+        };
+        return this.write(id, controlLine(rid, 'interrupt', canCancel ? { cancel_queued: true } : {}));
+    }
+
+    /**
+     * S-62 — stop ONE background command the CLI is running for this session,
+     * leaving the turn (if one runs) alone. The list it is picked from is the
+     * CLI's own (`backgroundTasks`); a task id the CLI never listed is refused
+     * here rather than sent, so the refusal names the real reason.
+     */
+    stopTask(id: string, taskId: string): { ok: boolean; note: string } {
+        const h = this.sessions.get(id);
+        if (!h) { return { ok: false, note: 'That session is not open here.' }; }
+        if (h.engine.shape !== 'persistent') {
+            return { ok: false, note: `${h.engine.label} runs nothing behind a turn here — there is no background command to stop.` };
+        }
+        const task = (h.state.backgroundTasks ?? []).find(t => t.id === taskId);
+        if (!task) { return { ok: false, note: `No background command "${taskId}" is running on this session.` }; }
+        const rid = `stop-${++h.reqSeq}`;
+        h.state = { ...h.state, pendingStops: [...(h.state.pendingStops ?? []), { requestId: rid, taskId }] };
+        const ok = this.write(id, controlLine(rid, 'stop_task', { task_id: taskId }));
+        return ok
+            ? { ok: true, note: `asked the CLI to stop "${task.description || taskId}"` }
+            : { ok: false, note: 'The session\'s process is not listening — nothing could be sent.' };
+    }
+
+    /**
+     * Change the model this session answers with, mid-conversation — the same
+     * thing `/model` does in a terminal (see consoleproto's header note).
+     *
+     * The switch is recorded as *pending* and only becomes the session's model
+     * when the CLI answers, because a `set_model` the CLI rejects must not
+     * leave the panel claiming a model that is not being used.
+     */
+    setModel(id: string, model: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h || !model.trim()) { return false; }
+        /**
+         * ‼️ K-25 — A LIVE CONTROL THAT IS STILL NOT A MID-TURN ONE.
+         *
+         * This engine really does take the change on the open connection
+         * (`session/set_config_option`), so it is neither Claude's "ask the CLI
+         * now" nor Codex's "the next process's flags". What it is not is a
+         * change to a turn that is already running: the protocol offers no such
+         * thing, and applying one anyway is how an answer changes model half way
+         * through. So a change asked for mid-turn is HELD to the boundary and
+         * said out loud — a picker that appeared to work and did nothing is the
+         * exact failure the `configId` trap already set once.
+         */
+        if (h.engine.shape === 'sharedAcp') {
+            const want = model.trim();
+            if (h.opencode?.running) {
+                h.opencode = { ...h.opencode, pending: { ...h.opencode.pending, model: want } };
+                this.mutate(id, s => ({
+                    ...s, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                        text: `model will become "${want}" when this turn ends — OpenCode cannot change the model of a turn that is running`
+                    }]
+                }));
+                return true;
+            }
+            // X-519 — measured: a pick made while the card's OpenCode session is still opening reached no
+            // connection and was dropped; it becomes the card's model, which the opening applies (openShared).
+            if (!h.opencode?.options.length) {
+                this.mutate(id, s => ({
+                    ...s, model: want, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                        text: `model will be "${want}" once this card's OpenCode session has opened`
+                    }]
+                }));
+                return true;
+            }
+            void this.applyOpencodeConfig(id, { model: want }, false);
+            return true;
+        }
+        // ‼️ NOTHING IS PENDING ON AN ENGINE WITH NO LIVE CONTROLS. There is no
+        // CLI to accept or refuse the switch: the next turn is a new process and
+        // it will be started with this flag, so the change is already true. A
+        // `pendingModel` here would be a panel waiting for an answer that can
+        // never come.
+        if (!h.engine.liveControls) {
+            this.mutate(id, s => ({ ...s, model: model.trim() }));
+            this.chose(id, { model: model.trim() });
+            return true;
+        }
+        // ‼️ X-495 — on this card's third-party route an Anthropic model is asked for by its alias,
+        // and one the route maps no model for is not sent at all (it could only fail there).
+        const asked = routedModel(model.trim(), this.engineRuntime?.(h.state.agentId, h.engine.id, {
+            providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned, model: model.trim()
+        }), { live: true });
+        if (!asked) {
+            this.mutate(id, s => ({
+                ...s, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                    text: `"${model.trim()}" was not sent — this card's route maps no model for it; pick one of the route's tiers`
+                }]
+            }));
+            return true;
+        }
+        const requestId = `model-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'set_model', { model: asked }))) { return false; }
+        this.mutate(id, s => ({ ...s, pendingModel: { requestId, model: asked } }));
+        return true;
+    }
+
+    /**
+     * Change how hard this session thinks, mid-conversation — the same thing
+     * `/effort` does in a terminal, and by the same means: `/effort` is itself
+     * an `apply_flag_settings` control request (see consoleproto's header).
+     *
+     * An empty value means "back to the CLI's own default" and travels as an
+     * explicit null, because leaving the key out would change nothing at all.
+     * Like `setModel`, the switch is recorded as *pending* and only becomes the
+     * session's effort when the CLI answers.
+     */
+    setEffort(id: string, effort: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        const want = effort.trim();
+        // see setModel — the next turn's flags are the control
+        if (!h.engine.liveControls) {
+            this.mutate(id, s => ({ ...s, effort: want }));
+            this.chose(id, { effort: want });
+            return true;
+        }
+        const requestId = `effort-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'apply_flag_settings', {
+            settings: { effortLevel: want || null }
+        }))) { return false; }
+        this.mutate(id, s => ({ ...s, pendingEffort: { requestId, effort: want } }));
+        return true;
+    }
+
+    /**
+     * Grant (or narrow) what this session may do, live — the standing RULE, as
+     * opposed to `answer`, which settles one specific request.
+     *
+     * ‼️ THE CLI CAN SAY NO, AND USED TO SAY IT INTO A VOID. Like `setModel`
+     * and `setEffort`, the switch is now recorded as PENDING and only becomes
+     * the session's mode when the CLI answers — and a refusal becomes a line in
+     * the conversation instead of a picker that quietly snaps back (see
+     * `pendingPermissionMode` in consoleproto). `true` here means the request
+     * went out, which is all a write can honestly claim; whether the mode
+     * changed is answered later, on the wire.
+     */
+    /**
+     * ‼️ X-213 — CHANGE THE SIGN-IN A LIVE CONVERSATION IS SPENDING.
+     *
+     * The thing the user was doing by hand: a window hits its five-hour ceiling
+     * mid-task, so they opened a second terminal, signed in as the other
+     * account, and carried on with `--resume`. The conversation survives that
+     * because the transcript is on disk and shared by junction; what does not
+     * survive is the process, which is sealed to the environment it was spawned
+     * with. Nothing here can change an environment variable of a running
+     * process, and nothing pretends to.
+     *
+     * So the answer differs by SHAPE, and the difference is a fact about the
+     * engine rather than a policy invented here:
+     *
+     * - **per-turn** (Codex and the rest): there is no process between turns.
+     *   The next turn is a new spawn that reads `state.account`, so the change
+     *   is already true the moment it is recorded. Nothing is pending, because
+     *   there is nothing to wait for.
+     * - **persistent** (Claude): the process IS the session. The choice is kept
+     *   as `accountNext`, said on the card, and honoured at the next prompt —
+     *   `send` ends the process and brings the same conversation back up on the
+     *   new sign-in. Doing it at the moment of choosing would spend a re-spawn
+     *   on somebody browsing the list, and would end a turn that is running.
+     * - **shared** (OpenCode): refused. The connection belongs to every card on
+     *   it, and no engine of that shape can isolate a sign-in anyway.
+     *
+     * `account` is the STATED answer — a slot id, or `MACHINE_ACCOUNT` for the
+     * machine's own — never the resolved one, or a card would follow the
+     * "use this next" button the next time it re-spawned. A RULE is the one
+     * exception: it is turned into its slot here (see `accountPick`).
+     */
+    setAccount(id: string, account: string): { ok: boolean; note: string } {
+        const h = this.sessions.get(id);
+        if (!h) { return { ok: false, note: 'That session is not open here.' }; }
+        if (h.state.status === 'ended' || h.state.status === 'error') {
+            return { ok: false, note: 'This session has ended — resume it to put it on another account.' };
+        }
+        let want = String(account || '').trim();
+        if (!want) {
+            return {
+                ok: false,
+                note: 'Say which sign-in outright — the machine\'s own has a name of its own here, '
+                    + 'because leaving it blank is what used to mean "whatever the Engines page says next".'
+            };
+        }
+        if (h.engine.shape === 'sharedAcp') {
+            return {
+                ok: false,
+                note: `${h.engine.label} shares one connection between every card on it, so a card cannot be `
+                    + 'moved to another sign-in on its own.'
+            };
+        }
+        const noId = {
+            ok: false,
+            note: 'This session has not reported its id yet, so there is nothing to resume it by — '
+                + 'say something in it first, then change the account.'
+        };
+        // ‼️ X-305 R2 — a rule is resolved NOW, into the slot the card will keep,
+        // and only once every other refusal has been said: a move that is not
+        // going to happen must not advance the round-robin cursor.
+        let why = '';
+        // ‼️ S-102 — the agent's next session remembers the RULE picked here (the
+        // card keeps only its slot); a sign-in clears it, but only when the card moves.
+        const rule = isPolicyId(want) ? want : '';
+        const remember = (): void => { this.chose(id, { account: rule }); };
+        if (isPolicyId(want)) {
+            if (h.engine.shape !== 'perTurn' && !h.state.sessionId) { return noId; }
+            const r = this.pickAccount(h.engine.id, want, h.state.agentId, h.state.model);
+            if (r.refusal) { return { ok: false, note: r.refusal }; }
+            want = r.id;
+            why = r.note;
+        }
+        const said = why ? `${want} (${why})` : want;
+        const now = (h.state.accountNext ?? h.state.account ?? '');
+        if (now === want) {
+            if (rule) { remember(); }
+            return { ok: true, note: '' };
+        }
+        // A per-turn engine has no process to re-seal: the flags and the
+        // environment of the turn about to start ARE the control (see setModel).
+        if (h.engine.shape === 'perTurn') {
+            this.mutate(id, s => ({
+                ...s, account: want, accountNext: undefined, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                    text: `the next turn runs on ${said} — ${h.engine.label} starts a new process per turn, `
+                        + 'so nothing had to be interrupted'
+                }]
+            }));
+            remember();
+            return { ok: true, note: '' };
+        }
+        // ‼️ …and a persistent one cannot move until its process does. A session
+        // that has not reported an id yet has nothing to resume BY, and saying
+        // so now beats discovering it when the prompt is already typed.
+        if (!h.state.sessionId) { return noId; }
+        this.mutate(id, s => ({
+            ...s, accountNext: want, lastTs: Date.now(),
+            messages: [...s.messages, {
+                id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                text: `next message runs on ${said} — ${h.engine.label} seals an account into the process, `
+                    + 'so this one is ended and the same conversation is resumed on it'
+            }]
+        }));
+        remember();
+        return { ok: true, note: '' };
+    }
+
+    /**
+     * ‼️ X-213 — END THIS PROCESS, BRING THE SAME CONVERSATION BACK ON THE OTHER
+     * ACCOUNT, AND SAY THE WAITING MESSAGE INTO IT.
+     *
+     * The two things that make this safe rather than clever:
+     *
+     * 1. **The old process is watched out, not assumed away.** Claude Code
+     *    refuses to join a session another process holds, and `taskkill` on this
+     *    machine takes seconds — so a resume fired straight after the kill fails
+     *    with nothing on screen to explain it. The CLI's own registry says when
+     *    the id is free; this waits for that and gives up ALOUD.
+     * 2. **The card keeps its seat and its totals.** `start` reuses the seat of
+     *    an ended card with the same session id, so this is one card throughout;
+     *    `carryOn` hands the running totals forward, or the conversation would
+     *    appear to get cheaper because somebody changed account.
+     */
+    private async reseal(id: string, prompt: string, attachments: Attachment[]): Promise<void> {
+        const h = this.sessions.get(id);
+        const sessionId = h?.state.sessionId;
+        const want = h?.state.accountNext;
+        if (!h || !sessionId || !want) { return; }
+        const s = h.state;
+        const carried = carryOn(s);
+        this.close(id, { sync: true, silent: true });
+        this.mutate(id, x => ({
+            ...x, exitReason: `ended to move this conversation to ${want}`
+        }));
+        const free = await this.awaitRelease(sessionId);
+        if (!free) {
+            this.mutate(id, x => ({
+                ...x, status: 'error', lastTs: Date.now(),
+                messages: [...x.messages, {
+                    id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                    text: 'The old process is still holding this session, so it could not be resumed on '
+                        + `${want}. Nothing was lost — the transcript is on disk. End that process `
+                        + '(Task Manager) and resume the session from the sessions list.'
+                }]
+            }));
+            return;
+        }
+        this.start({
+            agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
+            engine: h.engine.id as EngineId,
+            model: s.model, effort: s.effort, permissionMode: s.permissionMode,
+            providerId: s.providerId, tier: s.tier, routePinned: s.routePinned,
+            // the whole point of the exercise
+            account: want,
+            // ‼️ the SAME conversation, by id — this is `--resume`, which is the
+            // one thing that makes the swap free of loss
+            resume: sessionId,
+            carried,
+            projectId: s.projectId ?? '',
+            superpowers: s.superpowers === true,
+            firstPrompt: prompt || undefined,
+            firstAttachments: attachments.length ? attachments : undefined
+        });
+    }
+
+    /** Wait for the CLI's own registry to let go of a session id. Best effort,
+     *  and its failure is REPORTED rather than turned into a silent retry. */
+    private async awaitRelease(sessionId: string, tries = 25): Promise<boolean> {
+        for (let i = 0; i < tries; i++) {
+            await new Promise(r => setTimeout(r, 200));
+            if (!this.ownerPid(sessionId)) { return true; }
+        }
+        return false;
+    }
+
+    /**
+     * ‼️ X-266 — ONE LIVE PROCESS PER SESSION ID, MADE TRUE BEFORE A RESUME.
+     *
+     * A window reload kills the extension host and NOT the `claude -p` under it:
+     * the child outlives its parent with its stdout on a dead pipe, still
+     * holding the session in the CLI's registry and still doing real work that
+     * reaches nobody. Resuming that id then starts a second copy, and what the
+     * copy does depends on the CLI build — measured 2026-09-09 as two agents
+     * writing one repo, and 2026-09-13 (cli 2.1.269) as a card frozen in
+     * `starting` for twenty minutes behind a lock it never got. Either way the
+     * process the reader is looking at is not the one doing the work.
+     *
+     * So the survivor is ended FIRST and its registry record is watched until
+     * it drops; only then is the id free to start. The wait is bounded and its
+     * failure is returned, never hidden: a caller that cannot reclaim the id
+     * must refuse the resume and say who still holds it, because a copy started
+     * anyway is the fault this exists to remove. A session one of this host's
+     * own seats still holds is not a survivor and is left alone — that is a
+     * different mistake, and killing it would end a card the reader can see.
+     *
+     * `killPid` shells out (`taskkill` takes seconds here), which is why this is
+     * asynchronous and why the tries are generous: the record goes the moment
+     * the process does, and the process goes when `taskkill` gets to it.
+     */
+    async reclaim(sessionId: string, tries = 50): Promise<{ free: boolean; pid?: number; hostedBy?: string }> {
+        if (!sessionId) { return { free: true }; }
+        const pid = this.ownerPid(sessionId);
+        if (!pid) { return { free: true }; }
+        for (const [id, h] of this.sessions) {
+            if (!h.closed && h.state.sessionId === sessionId && h.state.status !== 'ended' && h.state.status !== 'error') {
+                return { free: false, pid, hostedBy: id };
+            }
+        }
+        killPid(pid);
+        this.reclaims++;
+        try { return { free: await this.awaitRelease(sessionId, tries), pid }; } finally { this.reclaims--; }
+    }
+
+    private reclaims = 0;
+    /** S-124 — a reclaim is between its kill and its release: that session has neither its process nor its card yet. */
+    get reclaiming(): boolean { return this.reclaims > 0; }
+
+    /**
+     * ‼️ X-349 — A REVIVED CARD NOBODY SPEAKS INTO IS NOT `starting`, IT IS WAITING.
+     *
+     * The reasoning and the verdict are in `consoleRevive.ts` (`settleVerdict`);
+     * this is the loop that asks it. The only source consulted is the CLI's OWN
+     * live registry, through the same `ownerPid` the reclaim uses: the process
+     * is registered when it is up, so the flip is the engine saying it exists
+     * rather than this host assuming it did.
+     *
+     * Nothing is written into the seat here and nothing about the conversation
+     * changes — `idle` is what the card already accepts a message in (a prompt
+     * written into a `starting` seat is delivered; measured in `nudgeRevived`).
+     * What it buys is that a silent revived card stops looking stuck and stops
+     * blocking every later restart (`SESSION_IN_FLIGHT`).
+     */
+    settleRevived(id: string, everyMs = 1000, tries = 60): void {
+        const h = this.sessions.get(id);
+        const sessionId = h?.state.sessionId;
+        if (!h || h.engine.shape !== 'persistent' || !sessionId) { return; }
+        let left = tries;
+        const timer = setInterval(() => {
+            const cur = this.sessions.get(id);
+            const verdict = settleVerdict({
+                status: cur?.state.status, closed: cur?.closed,
+                registered: !!this.ownerPid(sessionId), triesLeft: --left
+            });
+            if (verdict === 'wait') { return; }
+            clearInterval(timer);
+            this.settleTimers.delete(timer);
+            if (verdict === 'settle') {
+                this.mutate(id, s => ({ ...s, status: 'idle', revivedWaiting: true, lastTs: Date.now() }));
+            }
+        }, everyMs);
+        this.settleTimers.add(timer);
+    }
+
+    setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        // ‼️ ON THIS ENGINE THE MODE IS THE AGENT — `build` executes tools under
+        // its configured permissions, `plan` disallows every edit tool — and it
+        // is session config, so it moves on the live connection at the turn
+        // boundary exactly as the model does. What is recorded on the card as
+        // well is what "bypass" means HERE: not a flag handed to a process, but
+        // Agent Farm answering the engine's own questions (see startShared).
+        if (h.engine.shape === 'sharedAcp') {
+            const want = opencodePermissionFor(mode).mode;
+            this.mutate(id, s => ({
+                ...s, permissionMode: mode,
+                enforcedPermissionMode: mode,
+                permissionWhy: this.opencodePermissionWhy(mode)
+            }));
+            this.chose(id, { permissionMode: mode });
+            if (h.opencode?.running) {
+                h.opencode = { ...h.opencode, pending: { ...h.opencode.pending, mode: want } };
+                return true;
+            }
+            void this.applyOpencodeConfig(id, { mode: want }, true);
+            return true;
+        }
+        // ‼️ On a per-turn engine the mode is a SANDBOX chosen when the next
+        // process starts (see codexSandboxFor), so it takes effect on the next
+        // turn and not on the one already running — and a retry nudge would be
+        // sent into a turn that is still running under the OLD sandbox, which
+        // would simply fail again. The change is recorded; nothing is said.
+        if (!h.engine.liveControls) {
+            this.mutate(id, s => ({ ...s, permissionMode: mode }));
+            this.chose(id, { permissionMode: mode });
+            return true;
+        }
+        const requestId = `mode-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'set_permission_mode', { mode }))) { return false; }
+        h.state = { ...h.state, pendingPermissionMode: { requestId, mode } };
+        h.retryOnGrant = retryMessage?.trim() || undefined;
+        this.fire(id);
+        return true;
+    }
+
+    /** Drop the queue without touching the running turn. */
+    clearQueue(id: string): void {
+        this.mutate(id, s => ({ ...s, queued: [] }));
+    }
+
+    /**
+     * ‼️ K-23 — AN OLDER PIECE OF THE TRANSCRIPT, IN FRONT OF WHAT IS ALREADY
+     * THERE.
+     *
+     * The one rule that matters is the one S-30 states for resumeMessages: the
+     * same turn read twice is a duplicated conversation. Here it is enforced by
+     * IDENTITY rather than by choosing a winner — every scrollback row is named
+     * by its position in the file, so a row this card already holds is simply
+     * not added. The head row (`xh-start` / `h0`) is not content; it is the
+     * marker that says how much is still above, and the caller's new one
+     * replaces it.
+     *
+     * Returns how many rows were really added, so a caller can tell "there was
+     * nothing left" from "it worked".
+     */
+    prependHistory(id: string, head: ConsoleMessage, rows: ConsoleMessage[]): number {
+        const h = this.sessions.get(id);
+        if (!h) { return 0; }
+        const seen = new Set(h.state.messages.map(m => m.id));
+        const add = rows.filter(m => !seen.has(m.id));
+        if (!add.length) { return 0; }
+        const body = h.state.messages.filter(m => m.id !== head.id);
+        h.state = { ...h.state, messages: [head, ...add, ...body] };
+        this.fire(id);
+        return add.length;
+    }
+
+    /**
+     * End one session's process — the whole tree.
+     *
+     * `shell: true` means the child we hold is the shell wrapper, not `claude`
+     * itself: killing it leaves the real process running, orphaned, holding its
+     * entry in the CLI's session registry. That entry is what tells everyone
+     * "this session is open", so a leak here shows up as sessions that stay
+     * un-resumable for hours after they were closed. Kill the tree.
+     *
+     * Calling it twice is allowed and re-issues the kill — a second press is
+     * somebody telling us the first one did not take, and refusing it would
+     * turn the safety net into a dead button. Only the parts that must happen
+     * once (denying the parked question) are skipped on the repeat.
+     *
+     * ‼️ S-29 (reopened) — THE CARD TURNS THE MOMENT YOU PRESS IT.
+     *
+     * Everything here used to run before the state changed, and the last two
+     * steps SPAWN PROCESSES: `taskkill` for the tree, and another for the pid
+     * the CLI registry names. `child_process` spawning is asynchronous in its
+     * result and synchronous in its cost — `uv_spawn` blocks the extension
+     * host while Windows creates the process, and on a machine where a virus
+     * scanner inspects every launch that is not milliseconds. So the click sat
+     * there, twice, and only then did the panel hear that anything had
+     * happened: End session took seconds to do something the user had already
+     * decided.
+     *
+     * The order is now: shut the pipe (which MUST stay before the kill — see
+     * below), say the session ended, and reap the processes on the next tick.
+     * Nothing about the outcome changes; what changes is that the repaint no
+     * longer waits behind two process launches.
+     *
+     * `sync` is the one caller that cannot wait a tick: `dispose()` runs while
+     * the window is closing, and a deferred kill there would never run at all —
+     * which is precisely the orphaned-`claude` leak this method exists for.
+     * `silent` belongs to `forget`, which fires its own change straight after
+     * and would otherwise repaint the whole panel twice for one gesture.
+     */
+    close(id: string, o?: { sync?: boolean; silent?: boolean; reason?: string }): void {
+        const h = this.sessions.get(id);
+        if (!h) { return; }
+        const again = h.closed === true;
+        // A question still on the table is answered before the pipe goes: the
+        // process is about to be killed either way, but a session ending on an
+        // unanswered request writes that half-finished tool call into the
+        // transcript, and a resume then reads back a turn that never resolved.
+        if (!again && h.state.pendingAsk) {
+            this.answer(id, { kind: 'deny', message: 'The session was closed.' });
+        }
+        /**
+         * ‼️ K-25 — ENDING A CARD MUST NOT END ANYBODY ELSE'S TURN.
+         *
+         * There is no process of this session's to kill, and killing the shared
+         * one would take every other OpenCode conversation with it. So the card
+         * detaches: the runtime tells the agent the session is closed if the
+         * build offers a way to, and stops the process only when the LAST card
+         * has gone — which is the asymmetry the shared shape is for.
+         */
+        if (h.engine.shape === 'sharedAcp') {
+            if (h.opencode?.cancelTimer) { clearTimeout(h.opencode.cancelTimer); }
+            if (h.opencode) { h.opencode = { ...h.opencode, cancelTimer: undefined, running: false }; }
+            if (h.state.sessionId) { this.opencodeRt?.detach(h.state.sessionId); }
+        }
+        // ‼️ END MEANS END, AND THE PIPE IS SHUT BEFORE THE KILL — NOT AFTER.
+        // `taskkill` is asynchronous and a process that is dying still has
+        // everything it already wrote sitting in the pipe. Those lines kept
+        // arriving at `onData`, where reduceEvent read them as an ordinary
+        // running turn and moved `status` off 'ended': the button flipped to
+        // "Remove from list", the agent went on talking for another few
+        // seconds, and the button came back as "End session". It looked like
+        // the button had not worked — it had, and then the drain undid it.
+        // Nothing is read from a session that has been ended.
+        h.closed = true;
+        // ‼️ A per-turn engine BETWEEN turns has no process at all, and that is
+        // a live session rather than a broken one — so every step here tolerates
+        // its absence instead of assuming a child that a Codex session only has
+        // while it is actually answering.
+        try { h.child?.stdout?.removeAllListeners('data'); h.child?.stdout?.destroy(); } catch { /* already gone */ }
+        try { h.child?.stderr?.removeAllListeners('data'); h.child?.stderr?.destroy(); } catch { /* already gone */ }
+        try { h.child?.stdin?.end(); } catch { /* already gone */ }
+        // …and the process the CLI itself registered for this session. A
+        // `claude` that survives its window keeps that registry entry, which
+        // tells everyone the session is open — and Claude Code cannot join a
+        // session another process holds, so a survivor does not just leak, it
+        // makes the conversation UNREACHABLE. Killing it by name closes that
+        // gap even when the shell tree above has already fallen apart.
+        // …and only for the engine that keeps such a registry. A per-turn engine
+        // registers nothing between turns, so there is nobody to look up.
+        const child = h.child;
+        const sid = h.engine.shape === 'persistent' ? h.state.sessionId : undefined;
+        const reap = (): void => {
+            if (child) { killTree(child); }
+            const pid = sid ? this.ownerPid(sid) : undefined;
+            if (pid && pid !== child?.pid) { killPid(pid); }
+            /**
+             * ‼️ S-29 (V3) — "ended" IS A CLAIM ABOUT A PROCESS, SO IT IS CHECKED.
+             *
+             * The card turns grey BEFORE the kill on purpose: the button has to
+             * answer the moment it is pressed, and `taskkill` on this machine
+             * takes seconds. But that leaves the one thing the card must never
+             * do — say "ended" while the CLI is still running and still holding
+             * the session id, which is the state where a resume then fails with
+             * nothing on screen to explain it. So the kill is verified once, a
+             * beat later, and a survivor is written on the row instead of being
+             * left to the user to discover.
+             */
+            setTimeout(() => {
+                const still = sid ? this.ownerPid(sid) : undefined;
+                const alive = (child ? child.exitCode === null && child.signalCode === null : false)
+                    || (still !== undefined && still !== 0);
+                if (!alive) { return; }
+                const h2 = this.sessions.get(id);
+                if (!h2 || h2.state.status !== 'ended') { return; }
+                this.mutate(id, s => ({
+                    ...s,
+                    exitReason: `${s.exitReason ?? 'closed by you'}`
+                        + ' — ‼️ the process did not stop: it is still holding this session,'
+                        + ' so resuming it will be refused until it goes. Close it from Task Manager.'
+                }));
+            }, 4000);
+        };
+        // Say it first (unless the caller is about to say something louder),
+        // then reap. See the note above: the reap spawns processes.
+        const reason = o?.reason || 'closed by you';
+        if (o?.silent) {
+            h.state = { ...h.state, status: 'ended', exitReason: h.state.exitReason ?? reason };
+        } else {
+            this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? reason }));
+        }
+        if (o?.sync) { reap(); } else { setImmediate(reap); }
+    }
+
+    /**
+     * Forget an ended session (its transcript stays on disk).
+     *
+     * ‼️ S-29 (reopened) — ONE GESTURE, ONE REPAINT. Removing a card that was
+     * still live ended it first and let `close` fire its own change, so the
+     * panel rebuilt itself twice for one right-click: once for a card that had
+     * turned grey and once for a card that was gone. The Console's repaint
+     * redraws the whole conversation, which is the expensive thing on the page.
+     */
+    forget(id: string): void {
+        const h = this.sessions.get(id);
+        if (!h) { return; }
+        if (h.state.status !== 'ended' && h.state.status !== 'error') {
+            this.close(id, { silent: true });
+        }
+        this.sessions.delete(id);
+        this.fire(id);
+    }
+
+    dispose(): void {
+        this.autoAnswers.dispose();
+        for (const t of this.settleTimers) { clearInterval(t); }
+        this.settleTimers.clear();
+        // ‼️ Synchronously: the window is going away, and a kill deferred to a
+        // tick that never comes is the orphaned-process leak, not a fast panel.
+        for (const id of [...this.sessions.keys()]) { this.close(id, { sync: true, silent: true }); }
+        this.sessions.clear();
+        // …and the one process no session owns. `close` above detaches each card
+        // and stops it when the last goes, but a window closing with no OpenCode
+        // card open must still not leave 383 MB behind.
+        this.opencodeRt?.dispose();
+        this.opencodeRt = undefined;
+        this.listeners = [];
+    }
+}
